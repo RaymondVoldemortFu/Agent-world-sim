@@ -1,0 +1,39 @@
+{
+  "name": "agent-world-sim",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB 'uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000' 'vite --host 127.0.0.1'",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "simulate": "tsx scripts/simulate.ts",
+    "preview": "vite preview --host 127.0.0.1",
+    "format": "prettier --write frontend/src frontend/tests scripts *.ts *.json",
+    "test:backend": "uv run --project backend python -m unittest discover -s backend/tests -v",
+    "verify:run": "tsx scripts/verify-run.ts"
+  },
+  "dependencies": {
+    "dexie": "^4.0.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "prettier": "^3.9.6",
+    "tsx": "^4.19.4",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
