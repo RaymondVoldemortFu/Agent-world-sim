@@ -126,7 +126,9 @@
 随机的生成20个Agent，Agent的LLM使用deepseek v4 flash，不开reasoning
 运行100个tick
 
-    
+技术架构：
+ui选一个合适的前端技术实现；
+LLM请求实现一个简单的uv管理的python后端转发，避免把密钥放在前端。
 
 
 
