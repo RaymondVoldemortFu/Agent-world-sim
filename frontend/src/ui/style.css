@@ -1321,3 +1321,101 @@ footer {
   text-align: right;
   white-space: nowrap;
 }
+
+.page-nav {
+  display: flex;
+  gap: 4px;
+}
+.page-nav button {
+  padding: 8px 12px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+.page-nav button[aria-current] {
+  color: #e8d5a0;
+  background: #e8d5a015;
+}
+.config-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.config-card {
+  background: #17231d;
+  border: 1px solid #ffffff12;
+  border-radius: 12px;
+  padding: 24px;
+}
+.config-card h3 {
+  margin: 0 0 18px;
+  color: #e8d5a0;
+}
+.config-card dl {
+  margin: 0;
+}
+.config-card dl > div {
+  display: grid;
+  grid-template-columns: 42% minmax(0, 1fr);
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #ffffff0b;
+  font-size: 13px;
+}
+.config-card dt {
+  color: #91a092;
+}
+.config-card dd {
+  margin: 0;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.config-page .heading {
+  align-items: center;
+  gap: 20px;
+}
+.food-batches {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #c3a65b;
+}
+.food-batches small {
+  color: #91a092;
+}
+@media (max-width: 700px) {
+  .header {
+    height: auto;
+    padding: 14px 17px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .header-actions {
+    justify-content: space-between;
+  }
+  .page-nav,
+  .header-actions > button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .model-badge {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+  }
+  .config-sections {
+    grid-template-columns: 1fr;
+  }
+  .config-card {
+    padding: 18px;
+  }
+  .config-page .heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .page-nav button {
+    padding: 6px 9px;
+  }
+}

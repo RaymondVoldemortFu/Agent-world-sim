@@ -14,7 +14,13 @@ export function makeRecord(w: World, task = nextTask(w)): DecisionRecord {
   return {
     id: task.id,
     rulesVersion: w.rulesVersion,
-    schemaVersion: 'action-v1',
+    schemaVersion: ['mvp-1.6.0', 'mvp-1.7.0'].includes(w.rulesVersion)
+      ? 'action-v4'
+      : w.rulesVersion === 'mvp-1.5.0'
+        ? 'action-v3'
+        : ['mvp-1.3.0', 'mvp-1.4.0'].includes(w.rulesVersion)
+          ? 'action-v2'
+          : 'action-v1',
     runId: w.id,
     day: w.tick,
     agentId: task.agent.id,

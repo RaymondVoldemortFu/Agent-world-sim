@@ -5,6 +5,8 @@
   "gather": "采集",
   "harvest": "收获",
   "eat": "进食",
+  "shout": "大声说话",
+  "survey": "全力观察",
   "chat": "对话",
   "give": "给予",
   "feed": "照料",
@@ -18,7 +20,8 @@
   "reflection": "反思",
   "action_failed": "失败",
   "take": "拿取",
-  "drop": "放下",
+  "drop": "丢弃",
+  "place": "放置",
   "wait": "等待",
   "look": "观察"
 }

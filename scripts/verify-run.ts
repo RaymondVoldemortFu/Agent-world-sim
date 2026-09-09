@@ -3,6 +3,8 @@ import path from 'node:path';
 import { lines } from './journal';
 import { applyEvent } from '../frontend/src/sim/engine';
 import { hashWorld, weight } from '../frontend/src/sim/world';
+import { lonelinessCapacity } from '../frontend/src/sim/social';
+import { validateFood } from '../frontend/src/sim/food';
 import type { World, WorldEvent, Snapshot } from '../frontend/src/sim/types';
 const folder = path.resolve(process.argv[2] ?? 'artifacts/scripted-compact');
 const checkpoint = JSON.parse(fs.readFileSync(path.join(folder, 'checkpoint.json'), 'utf8'));
@@ -26,17 +28,35 @@ for await (const line of lines(path.join(folder, 'events.jsonl'))) {
   applyEvent(w, e);
   events++;
   for (const a of w.agents) {
+    if (w.rulesVersion !== 'mvp-1.0.0') validateFood(a.inventory, a.foodBatches);
     if (
+      (a.social &&
+        (a.social.loneliness < 0 ||
+          a.social.loneliness > lonelinessCapacity(a) ||
+          !Number.isInteger(a.social.loneliness) ||
+          a.social.lastSpokeDay > e.day ||
+          (a.social.depressed && a.social.loneliness === 0))) ||
+      (a.corpse &&
+        (!a.death ||
+          a.corpse.x !== a.x ||
+          a.corpse.y !== a.y ||
+          a.corpse.sinceDay !== a.death.day)) ||
+      (a.survey &&
+        (a.survey.eventSeq > e.seq ||
+          a.survey.day > e.day ||
+          a.survey.radius !== 3 ||
+          a.survey.tiles.length > 49)) ||
       a.hp < 0 ||
       a.hp > 100 ||
       a.hunger < 0 ||
       a.hunger > 100 ||
-      weight(a.inventory) > 12 ||
+      weight(a.inventory) > (w.config.inventoryCapacity ?? 12) ||
       Object.values(a.inventory).some((n) => !Number.isInteger(n) || n! < 0)
     )
       throw new Error(`Agent invariant broken at event ${e.seq}`);
   }
   for (const t of e.patch.tiles) {
+    if (w.rulesVersion !== 'mvp-1.0.0') validateFood(t.ground, t.groundFoodBatches);
     if (
       t.farmFood < 0 ||
       Object.values(t.resources).some((n) => n! < 0) ||

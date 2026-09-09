@@ -7,7 +7,7 @@ import {
   type Bundle,
   ConfigSchema,
 } from '../sim/types';
-import { hashWorld, RULES_VERSION } from '../sim/world';
+import { hashWorld, SUPPORTED_REPLAY_VERSIONS } from '../sim/world';
 import { applyEvent } from '../sim/engine';
 interface StoredRun {
   id: string;
@@ -95,7 +95,7 @@ export function validateBundle(b: unknown): asserts b is Bundle {
     !v ||
     v.format !== 'agent-world-v1' ||
     v.world?.version !== 1 ||
-    v.world?.rulesVersion !== RULES_VERSION
+    !SUPPORTED_REPLAY_VERSIONS.includes(v.world?.rulesVersion)
   )
     throw new Error('不支持的数据包或规则版本');
   ConfigSchema.parse(v.world.config);

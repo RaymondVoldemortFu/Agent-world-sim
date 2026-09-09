@@ -2,7 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { repairJournal, exportJournal } from './journal';
-import { createWorld, hashWorld, living, tileAt, count, weight } from '../frontend/src/sim/world';
+import {
+  createWorld,
+  hashWorld,
+  living,
+  tileAt,
+  count,
+  weight,
+  RULES_VERSION,
+} from '../frontend/src/sim/world';
+import { foodSummary } from '../frontend/src/sim/food';
 import { act, endDay, nextTask, reflect, metrics } from '../frontend/src/sim/engine';
 import { nextBatch } from '../frontend/src/sim/scheduler';
 import {
@@ -65,9 +74,12 @@ const write = (name: string, data: unknown) => {
   fs.renameSync(file(name + '.tmp'), file(name));
 };
 const config: Partial<Config> = {
-  days: Number(arg('days', '100')),
-  population: Number(arg('population', '20')),
-  seed: Number(arg('seed', '20260909')),
+  ...(args.includes('--config') ? JSON.parse(fs.readFileSync(arg('config', ''), 'utf8')) : {}),
+  ...Object.fromEntries(
+    ['days', 'population', 'seed', 'size']
+      .filter((key) => args.includes(`--${key}`))
+      .map((key) => [key, Number(arg(key, ''))]),
+  ),
 };
 let w: World;
 let pending: DecisionRecord | undefined;
@@ -75,6 +87,10 @@ let elapsed = 0;
 if (args.includes('--resume') && fs.existsSync(file('checkpoint.json'))) {
   const c = JSON.parse(fs.readFileSync(file('checkpoint.json'), 'utf8'));
   w = c.world;
+  if (w.rulesVersion !== RULES_VERSION && w.cursor.phase !== 'complete')
+    throw new Error(
+      'Legacy experiment is read-only under the current rules; use a new output directory',
+    );
   elapsed = c.elapsedMs;
   if (fs.existsSync(file('pending.json')))
     pending = JSON.parse(fs.readFileSync(file('pending.json'), 'utf8'));
@@ -100,6 +116,11 @@ fs.appendFileSync(
         'frontend/src/sim/scheduler.ts',
         'frontend/src/sim/engine.ts',
         'frontend/src/sim/world.ts',
+        'frontend/src/sim/types.ts',
+        'frontend/src/sim/food.ts',
+        'frontend/src/sim/social.ts',
+        'frontend/src/sim/perception.ts',
+        'frontend/src/sim/recipes.ts',
         'frontend/src/runtime/model.ts',
         'backend/app/main.py',
       ].map((p) => [p, createHash('sha256').update(fs.readFileSync(p)).digest('hex')]),
@@ -112,21 +133,38 @@ fs.mkdirSync(file('pending'), { recursive: true });
 const pendingFile = (id: string) =>
   'pending/' + createHash('sha256').update(id).digest('hex') + '.json';
 const started = Date.now();
-let stopped = false;
-process.on('SIGINT', () => {
+let stopped = args.includes('--initialize-only');
+write('runner-settings.json', { mode, concurrency, api: arg('api', 'http://127.0.0.1:8000') });
+const stop = () => {
   stopped = true;
+  write('runner-status.json', { pid: process.pid, state: 'stopping' });
   console.log('Stopping at next committed boundary…');
-});
+};
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);
+write('runner-status.json', { pid: process.pid, state: 'running' });
+function stopRequested() {
+  try {
+    return JSON.parse(fs.readFileSync(file('runner-control.json'), 'utf8')).stopPid === process.pid;
+  } catch {
+    return false;
+  }
+}
 function scripted(w: World, id: number): Decision {
   const a = w.agents.find((a) => a.id === id)!;
   const t = tileAt(w, a.x, a.y);
   let action: Decision['action'] = { type: 'wait' };
-  if (a.hunger <= 60 && count(a.inventory, 'food'))
+  const food = foodSummary(a.foodBatches, w.tick);
+  if (food.spoiled) action = { type: 'drop', item: 'food', quantity: Math.min(15, food.spoiled) };
+  else if (a.hunger <= 60 && food.fresh)
     action = {
       type: 'eat',
-      quantity: Math.min(3, count(a.inventory, 'food'), Math.ceil((100 - a.hunger) / 20)),
+      quantity: Math.min(3, food.fresh, Math.ceil((100 - a.hunger) / 20)),
     };
-  else if (weight(a.inventory) < 10 && (t.farm >= 3 ? t.farmFood : count(t.resources, 'food')) > 0)
+  else if (
+    weight(a.inventory) < (w.config.inventoryCapacity ?? 12) - 2 &&
+    (t.farm >= 3 ? t.farmFood : count(t.resources, 'food')) > 0
+  )
     action = t.farm >= 3 ? { type: 'harvest' } : { type: 'gather', resource: 'food' };
   else {
     const candidates = [
@@ -147,7 +185,7 @@ function append(name: string, data: unknown) {
 }
 let reason = '';
 try {
-  while (w.cursor.phase !== 'complete' && !stopped) {
+  while (w.cursor.phase !== 'complete' && !stopped && !stopRequested()) {
     reason = budgetReason(w, elapsed + Date.now() - started) ?? '';
     if (reason) break;
     const tasks = nextBatch(
@@ -205,6 +243,9 @@ try {
           pending = undefined;
           if (fs.existsSync(file('pending.json'))) fs.unlinkSync(file('pending.json'));
         }
+        // A free drop keeps this actor's paid slot. Other prefetched replies stay
+        // durable in pending until the actor completes that slot.
+        if (w.cursor.freeActions) break;
       }
       if (reason) break;
       continue;
@@ -222,7 +263,7 @@ try {
         } satisfies Snapshot);
       console.log(
         JSON.stringify({
-          ...metrics(w),
+          ...w.metrics.at(-1),
           day: event.day,
           seq: w.seq,
           elapsedSeconds: Math.round((elapsed + Date.now() - started) / 1000),
@@ -253,4 +294,9 @@ write('summary.json', {
   concurrency,
 });
 await exportJournal(out, w, checkpoint.elapsedMs);
+write('runner-status.json', {
+  pid: process.pid,
+  state: process.exitCode ? 'failed' : w.cursor.phase === 'complete' ? 'completed' : 'paused',
+  reason,
+});
 console.log(`RESULT ${file('summary.json')} ${reason}`);

@@ -1,10 +1,13 @@
 import type { Agent, World } from './types';
-import { nextTask } from './engine';
+import { nextTask, decisionIdFor } from './engine';
 export type ScheduledTask = NonNullable<ReturnType<typeof nextTask>>;
 export function conflicts(w: World, a: Agent, b: Agent): boolean {
   // Visibility radius (1) + maximum movement per action (1). A one-step move
   // at distance 2 can enter the other actor's observation before its decision.
+  // Shout also reaches radius 2, so listeners must stay in separate batches.
   if (Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 2) return true;
+  // Survey is sampled during commit and saved as a frozen private snapshot.
+  // It does not expand the live observation read by subsequent decisions.
   // Revoking a pending joint proposal changes the partner's available proposals,
   // even after the pair has moved apart. Preserve this non-spatial dependency.
   return w.proposals.some(
@@ -30,7 +33,7 @@ export function nextBatch(w: World, limit: number): ScheduledTask[] {
     batch.push({
       kind: first.kind,
       agent,
-      id: `${w.id}:${w.tick}:${phase}:${w.cursor.round}:${agent.id}`,
+      id: decisionIdFor(w, agent.id),
     });
   }
   return batch;

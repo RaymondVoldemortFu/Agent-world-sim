@@ -1,5 +1,39 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
+test('configuration page shows the current world rules on desktop and mobile', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '生成世界', exact: false }).click();
+  await expect(page.getByText('新世界已生成')).toBeVisible();
+  await page.getByRole('button', { name: '配置', exact: true }).click();
+  const config = page.getByRole('region', { name: '世界配置' });
+  await expect(config).toBeVisible();
+  const setting = (label: string) =>
+    config.locator('dl > div').filter({ has: page.getByText(label, { exact: true }) });
+  await expect(setting('地图尺寸')).toContainText('15 × 15');
+  await expect(setting('先知')).toContainText('1 人');
+  await expect(setting('未改造平原食物上限')).toContainText('4 份 / 格');
+  await expect(setting('平原采集恢复等待')).toContainText('5 天');
+  await expect(setting('采后保鲜期')).toContainText('4 天');
+  await expect(setting('成功交配受孕率')).toContainText('100%');
+  await expect(setting('妊娠期')).toContainText('5 天');
+  await expect(setting('腐败食物影响')).toContainText('饱食度 +20');
+  await expect(setting('携带容量')).toContainText('15 单位');
+  await expect(setting('每日行动点')).toContainText('5 AP');
+  await expect(setting('丢弃物品')).toContainText('销毁背包物品，0 AP');
+  await expect(setting('放置物品')).toContainText('1 AP，可被捡起');
+  await expect(setting('观察方式')).toContainText('每次决策自动更新，0 AP');
+  await expect(setting('大声说话')).toContainText('2 AP，2 格内可听见');
+  await expect(setting('孤单条长度')).toContainText('40–100');
+  await expect(setting('抑郁状态')).toContainText('每日额外扣 10 血');
+  await expect(setting('全力观察')).toContainText('2 AP，3 格内');
+  await expect(setting('尸体')).toContainText('死亡后保留在原地');
+  await page.screenshot({ path: 'artifacts/ui-config.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'artifacts/ui-config-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: '世界', exact: true }).click();
+  await expect(page.getByLabel('世界地图，可拖动、缩放和选择地块')).toBeVisible();
+});
 for (const source of ['local', 'archive']) {
   test(`chronicle searches early conversations across full ${source} history`, async ({ page }) => {
     await page.goto(source === 'archive' ? '/?experiment=e2e-search-fixture' : '/');
@@ -14,8 +48,8 @@ for (const source of ['local', 'archive']) {
     await expect(rows).toHaveCount(120);
     await expect(rows.filter({ hasText: '一起合作' })).toHaveCount(0);
     await page.getByRole('button', { name: '加载更早记录' }).click();
-    await expect(rows).toHaveCount(150);
-    await expect(rows.first()).toContainText('#150');
+    await expect(rows).toHaveCount(195);
+    await expect(rows.first()).toContainText('#195');
     await expect(page.getByRole('button', { name: '加载更早记录' })).toBeDisabled();
     await page.getByLabel('事件类型').selectOption('chat');
     await expect(rows).toHaveCount(2);
@@ -274,4 +308,120 @@ test('distant agents request concurrently but commit in ID order', async ({ page
     return events.map((e: { actorId: number }) => e.actorId);
   });
   expect(ids).toEqual(Array.from({ length: calls }, (_, i) => i + 1));
+});
+test('a free drop retains five paid actions and reuses prefetched replies', async ({
+  page,
+  context,
+}) => {
+  const calls = new Map<string, number>();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await context.route('**/api/decision', async (route) => {
+    const req = route.request().postDataJSON();
+    calls.set(req.decisionId, (calls.get(req.decisionId) ?? 0) + 1);
+    const firstDrop =
+      req.context.self.id === 1 && req.context.round === 1 && !req.decisionId.includes(':free-');
+    if (firstDrop) await gate;
+    await route.fulfill({
+      json: {
+        content: JSON.stringify({
+          action: firstDrop ? { type: 'drop', item: 'food', quantity: 1 } : { type: 'wait' },
+        }),
+        model: 'fixture',
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+        elapsedMs: 1,
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '导入 ↑' }).click();
+  await page
+    .locator('input[type=file]')
+    .setInputFiles(path.resolve('artifacts/free-drop-fixture.json'));
+  await expect(page.getByText('实验记录导入成功')).toBeVisible();
+  await page.getByRole('button', { name: '▶ 开始演化' }).click();
+  await expect.poll(() => calls.size).toBe(2);
+  await page.getByRole('button', { name: 'Ⅱ 暂停' }).click();
+  release();
+  await expect(page.getByText('已暂停，历史已保存', { exact: true })).toBeVisible();
+  await expect(page.locator('.event-row')).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByText('已恢复上次提交的世界')).toBeVisible();
+  await page.getByRole('button', { name: '▶ 开始演化' }).click();
+  await expect(page.getByText('100% · 实验已完成', { exact: true })).toBeVisible();
+  expect(calls.size).toBe(11);
+  expect([...calls.values()].every((n) => n === 1)).toBe(true);
+  await expect(page.locator('.event-row')).toHaveCount(12);
+  await expect(page.locator('.event-row').filter({ hasText: '暂作等待' })).toHaveCount(10);
+  await expect(page.locator('.event-row').filter({ hasText: '丢弃并销毁' })).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByText('实验已完成', { exact: true })).toBeVisible();
+  await expect(page.locator('.event-row')).toHaveCount(12);
+});
+
+test('shouts are importable, searchable and survive refresh', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '导入 ↑' }).click();
+  await page
+    .locator('input[type=file]')
+    .setInputFiles(path.resolve('artifacts/shout-fixture.json'));
+  await expect(page.getByText('实验记录导入成功')).toBeVisible();
+  await page.getByLabel('事件类型').selectOption('shout');
+  await page.getByLabel('搜索事件').fill('两格以内的朋友');
+  await expect(page.locator('.event-row')).toHaveCount(1);
+  await expect(page.locator('.event-row')).toContainText('大声说话');
+  await page.getByLabel('搜索事件').fill('');
+  await page.getByLabel('事件类型').selectOption('place');
+  await expect(page.locator('.event-row')).toHaveCount(1);
+  await expect(page.locator('.event-row')).toContainText('在地上放置');
+  await page.reload();
+  await page.getByLabel('事件类型').selectOption('shout');
+  await expect(page.locator('.event-row')).toContainText('一起采集吧');
+  await page.locator('.agent-list button').first().click();
+  const loneliness = page.locator('.meter').filter({ hasText: '孤单' });
+  await expect(loneliness).toContainText('20');
+  await expect(
+    page.getByText('抑郁 · 每日额外扣 10 血，孤单清零后解除', { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: 'artifacts/ui-loneliness.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('corpses and survey snapshots persist through browser import and replay', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '导入 ↑' }).click();
+  await page
+    .locator('input[type=file]')
+    .setInputFiles(path.resolve('artifacts/perception-fixture.json'));
+  await expect(page.getByText('实验记录导入成功')).toBeVisible();
+  await page.locator('.agent-list button:not(.dead)').first().click();
+  await expect(page.getByText('最近全力观察', { exact: true })).toBeVisible();
+  await expect(page.getByText('49 个地块 · 0 名活人 · 1 具尸体', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '地块', exact: true }).click();
+  await expect(page.locator('.resident-link').filter({ hasText: '尸体' })).toHaveCount(1);
+  await page.getByLabel('事件类型').selectOption('survey');
+  await expect(page.locator('.event-row')).toHaveCount(1);
+  await expect(page.locator('.event-row')).toContainText('全力观察');
+  await page.screenshot({ path: 'artifacts/ui-corpse-survey.png', fullPage: true });
+  await page.reload();
+  await page.getByLabel('历史事件序号').fill('0');
+  await expect(page.locator('.agent-list button.dead')).toHaveCount(0);
+  await page.getByRole('button', { name: '返回当前' }).click();
+  await expect(page.locator('.agent-list button.dead')).toHaveCount(1);
+});
+
+test('the initial prophet is visible with all recipes and survives refresh', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '生成世界', exact: false }).click();
+  await expect(page.getByText('新世界已生成')).toBeVisible();
+  const prophet = page.locator('.agent-list button').filter({ hasText: '先知' });
+  await expect(prophet).toHaveCount(1);
+  await expect(page.locator('.agent-list button')).toHaveCount(20);
+  await prophet.click();
+  await expect(page.locator('.agent-heading')).toContainText('先知');
+  await expect(page.getByText('基础工具、高级工具、棚屋', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'artifacts/ui-prophet.png', fullPage: true });
+  await page.reload();
+  await expect(page.locator('.agent-list button').filter({ hasText: '先知' })).toHaveCount(1);
 });

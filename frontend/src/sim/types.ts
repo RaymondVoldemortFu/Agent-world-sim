@@ -1,70 +1,92 @@
 import { z } from 'zod';
 export type Item = 'food' | 'wood' | 'stone' | 'ore' | 'basic_tool' | 'advanced_tool';
 export type Inventory = Partial<Record<Item, number>>;
-const quantity = z.number().int().min(1).max(12);
+export interface FoodBatch {
+  quantity: number;
+  expiresOnDay: number;
+}
+const quantity = z.number().int().min(1).max(15);
 const target = z.number().int().positive();
 const materials = z
   .object({ wood: quantity.optional(), stone: quantity.optional(), ore: quantity.optional() })
   .strict();
 const item = z.enum(['food', 'wood', 'stone', 'ore', 'basic_tool', 'advanced_tool']);
-export const ActionSchema = z.discriminatedUnion('type', [
-  z
-    .object({
-      type: z.literal('move'),
-      dx: z.number().int().min(-1).max(1),
-      dy: z.number().int().min(-1).max(1),
-    })
-    .strict(),
-  z.object({ type: z.literal('look') }).strict(),
-  z.object({ type: z.literal('harvest') }).strict(),
-  z.object({ type: z.literal('terraform') }).strict(),
-  z.object({ type: z.literal('wait') }).strict(),
-  z
-    .object({ type: z.literal('gather'), resource: z.enum(['food', 'wood', 'stone', 'ore']) })
-    .strict(),
-  z.object({ type: z.literal('eat'), quantity: z.number().int().min(1).max(3) }).strict(),
-  z.object({ type: z.literal('take'), item, quantity }).strict(),
-  z.object({ type: z.literal('drop'), item, quantity }).strict(),
-  z.object({ type: z.literal('give'), targetId: target, item, quantity }).strict(),
-  z.object({ type: z.literal('feed'), targetId: target }).strict(),
-  z.object({ type: z.literal('attack'), targetId: target }).strict(),
-  z
-    .object({
-      type: z.literal('chat'),
-      targetId: target.optional(),
-      text: z.string().min(1).max(240),
-      proposal: z
-        .object({ kind: z.literal('reproduce'), targetId: target })
-        .strict()
-        .optional(),
-      acceptProposalId: z.string().max(100).optional(),
-      revokeProposalId: z.string().max(100).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal('experiment'),
-      materials,
-      method: z.enum(['combine', 'grind', 'assemble']),
-    })
-    .strict(),
-  z.object({ type: z.literal('craft'), recipeId: z.string().max(50) }).strict(),
-  z
-    .object({
-      type: z.literal('build'),
-      recipeId: z.string().max(50),
-      materials: materials.optional(),
-    })
-    .strict(),
-  z.object({ type: z.literal('reproduce'), proposalId: z.string().max(100) }).strict(),
-]);
+export const ActionSchema = z
+  .discriminatedUnion('type', [
+    z
+      .object({
+        type: z.literal('move'),
+        dx: z.number().int().min(-1).max(1),
+        dy: z.number().int().min(-1).max(1),
+      })
+      .strict(),
+    z.object({ type: z.literal('shout'), text: z.string().min(1).max(240) }).strict(),
+    z.object({ type: z.literal('survey') }).strict(),
+    z.object({ type: z.literal('harvest') }).strict(),
+    z.object({ type: z.literal('terraform') }).strict(),
+    z.object({ type: z.literal('wait') }).strict(),
+    z
+      .object({ type: z.literal('gather'), resource: z.enum(['food', 'wood', 'stone', 'ore']) })
+      .strict(),
+    z.object({ type: z.literal('eat'), quantity: z.number().int().min(1).max(3) }).strict(),
+    z.object({ type: z.literal('take'), item, quantity }).strict(),
+    z.object({ type: z.literal('drop'), item, quantity }).strict(),
+    z.object({ type: z.literal('place'), item, quantity }).strict(),
+    z.object({ type: z.literal('give'), targetId: target, item, quantity }).strict(),
+    z.object({ type: z.literal('feed'), targetId: target }).strict(),
+    z.object({ type: z.literal('attack'), targetId: target }).strict(),
+    z
+      .object({
+        type: z.literal('chat'),
+        targetId: target.optional(),
+        text: z.string().min(1).max(240),
+        proposal: z
+          .object({ kind: z.literal('reproduce'), targetId: target })
+          .strict()
+          .optional(),
+        acceptProposalId: z.string().max(100).optional(),
+        revokeProposalId: z.string().max(100).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal('experiment'),
+        materials,
+        method: z.enum(['combine', 'grind', 'assemble']),
+      })
+      .strict(),
+    z.object({ type: z.literal('craft'), recipeId: z.string().max(50) }).strict(),
+    z
+      .object({
+        type: z.literal('build'),
+        recipeId: z.string().max(50),
+        materials: materials.optional(),
+      })
+      .strict(),
+    z.object({ type: z.literal('reproduce'), proposalId: z.string().max(100) }).strict(),
+  ])
+  .superRefine((action, ctx) => {
+    if (
+      action.type === 'chat' &&
+      [action.proposal, action.acceptProposalId, action.revokeProposalId].filter(
+        (value) => value !== undefined,
+      ).length > 1
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'proposal（新建）、acceptProposalId（接受）、revokeProposalId（撤回）只能填写一个；接受已有提案时只填 acceptProposalId 和聊天内容',
+      });
+    }
+  });
 // Explicit union keeps downstream action narrowing precise despite Zod's dynamic literal list.
 export type Action =
   | { type: 'move'; dx: number; dy: number }
-  | { type: 'look' | 'harvest' | 'terraform' | 'wait' }
+  | { type: 'harvest' | 'terraform' | 'wait' | 'survey' }
+  | { type: 'shout'; text: string }
   | { type: 'gather'; resource: 'food' | 'wood' | 'stone' | 'ore' }
   | { type: 'eat'; quantity: number }
-  | { type: 'take' | 'drop'; item: Item; quantity: number }
+  | { type: 'take' | 'drop' | 'place'; item: Item; quantity: number }
   | { type: 'give'; targetId: number; item: Item; quantity: number }
   | { type: 'feed' | 'attack'; targetId: number }
   | {
@@ -115,6 +137,7 @@ export interface Memory {
 export interface Agent {
   id: number;
   name: string;
+  role?: 'prophet';
   sex: 'F' | 'M';
   age: number;
   parents: number[];
@@ -122,8 +145,10 @@ export interface Agent {
   y: number;
   hp: number;
   hunger: number;
+  social?: { loneliness: number; lastSpokeDay: number; depressed: boolean };
   ap: number;
   inventory: Inventory;
+  foodBatches?: FoodBatch[];
   personality: number[];
   recipes: string[];
   intent: string;
@@ -133,6 +158,8 @@ export interface Agent {
   pregnancy?: { father: number; due: number };
   cooldownUntil: number;
   death?: { day: number; cause: string };
+  corpse?: { x: number; y: number; sinceDay: number };
+  survey?: SurveyResult;
 }
 export interface Tile {
   x: number;
@@ -143,6 +170,7 @@ export interface Tile {
   farm: number;
   farmFood: number;
   ground: Inventory;
+  groundFoodBatches?: FoodBatch[];
   shelter: { materials: Inventory; labor: number; complete: boolean } | null;
 }
 export interface Proposal {
@@ -171,10 +199,19 @@ export interface Config {
   inputPrice: number;
   outputPrice: number;
   cachePrice: number;
+  plainFoodCapacity: number;
+  plainRecoveryDays: number;
+  foodShelfLifeDays: number;
+  inventoryCapacity: number;
+  spoiledFoodDamage: number;
+  spoiledFoodHungerGain: number;
+  dailyAP: number;
+  freeDrop: boolean;
+  reproductionSuccessRate: 1;
 }
 export const ConfigSchema = z
   .object({
-    size: z.number().int().min(16).max(64),
+    size: z.number().int().min(10).max(64),
     population: z.number().int().min(1).max(60),
     days: z.number().int().min(1).max(1000),
     seed: z.number().int().min(0).max(4294967295),
@@ -189,10 +226,19 @@ export const ConfigSchema = z
     inputPrice: z.number().min(0),
     outputPrice: z.number().min(0),
     cachePrice: z.number().min(0),
+    plainFoodCapacity: z.number().int().min(0).max(100).default(4),
+    plainRecoveryDays: z.number().int().min(1).max(100).default(5),
+    foodShelfLifeDays: z.number().int().min(1).max(100).default(4),
+    inventoryCapacity: z.number().int().min(1).max(100).default(15),
+    spoiledFoodDamage: z.number().int().min(1).max(100).default(20),
+    spoiledFoodHungerGain: z.number().int().min(0).max(100).default(20),
+    dailyAP: z.number().int().min(1).max(12).default(5),
+    freeDrop: z.boolean().default(true),
+    reproductionSuccessRate: z.literal(1).default(1),
   })
   .strict();
 export const DEFAULT_CONFIG: Config = {
-  size: 64,
+  size: 15,
   population: 20,
   days: 100,
   seed: 20260909,
@@ -207,6 +253,15 @@ export const DEFAULT_CONFIG: Config = {
   inputPrice: 0,
   outputPrice: 0,
   cachePrice: 0,
+  plainFoodCapacity: 4,
+  plainRecoveryDays: 5,
+  foodShelfLifeDays: 4,
+  inventoryCapacity: 15,
+  spoiledFoodDamage: 20,
+  spoiledFoodHungerGain: 20,
+  dailyAP: 5,
+  freeDrop: true,
+  reproductionSuccessRate: 1,
 };
 export interface Metrics {
   day: number;
@@ -214,9 +269,13 @@ export interface Metrics {
   births: number;
   deaths: number;
   food: number;
+  freshFood?: number;
+  spoiledFood?: number;
   wildFood: number;
   farms: number;
   avgHunger: number;
+  avgLoneliness?: number;
+  depressed?: number;
   chats: number;
   gifts: number;
   attacks: number;
@@ -228,6 +287,7 @@ export interface Metrics {
   outputTokens: number;
 }
 export interface Cursor {
+  freeActions?: number;
   phase: 'actions' | 'reflections' | 'end' | 'complete';
   round: number;
   index: number;
@@ -341,4 +401,43 @@ export interface Bundle {
   events: WorldEvent[];
   decisions: DecisionRecord[];
   snapshots: Snapshot[];
+}
+
+export interface CorpseView {
+  id: number;
+  name: string;
+  x: number;
+  y: number;
+  status: 'dead';
+}
+export interface SurveyResult {
+  day: number;
+  eventSeq: number;
+  origin: [number, number];
+  radius: number;
+  tiles: {
+    x: number;
+    y: number;
+    terrain: Tile['terrain'];
+    resources: Inventory;
+    ground?: Inventory;
+    freshFood?: number;
+    spoiledFood?: number;
+    farm?: number;
+    farmFood?: number;
+    shelter?: 'building' | 'complete';
+  }[];
+  people: {
+    id: number;
+    name: string;
+    x: number;
+    y: number;
+    status: 'alive';
+    // Older saved surveys did not record sex or age stage.
+    sex?: Agent['sex'];
+    ageStage?: 'adult' | 'child';
+    role?: 'prophet';
+    health: string;
+  }[];
+  corpses: CorpseView[];
 }

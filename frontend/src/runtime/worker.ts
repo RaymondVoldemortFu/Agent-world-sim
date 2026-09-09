@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { createWorld } from '../sim/world';
+import { createWorld, RULES_VERSION } from '../sim/world';
 import { act, endDay, nextTask, reflect, changeBudget, resetFailureStreak } from '../sim/engine';
 import {
   db,
@@ -66,6 +66,8 @@ async function loop(single = false) {
         world = saved.world;
         elapsed = saved.elapsedMs;
       }
+      if (world!.rulesVersion !== RULES_VERSION)
+        throw new Error('该存档使用旧版规则，可查看与回放。请新建世界运行当前规则。');
       if (world!.usage.consecutiveErrors >= 5) {
         const e = resetFailureStreak(world!);
         await commit(world!, e, undefined, elapsed);
@@ -115,7 +117,10 @@ async function loop(single = false) {
                 : reflect(w, task.agent.id, record.reflection!, task.id);
             await commit(w, event, record, elapsed + Date.now() - started);
             status = event.text;
-            if (i === records.length - 1) await publish(event);
+            if (i === records.length - 1 || w.cursor.freeActions) await publish(event);
+            // Later independent replies remain saved; resume this actor's slot
+            // before committing those replies in their original ID order.
+            if (w.cursor.freeActions) break;
           }
           if (fatal) break;
         } else {

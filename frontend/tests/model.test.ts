@@ -37,6 +37,31 @@ it('does not request again when a received response was persisted', async () => 
   await requestDecision(r, async () => {}, '', fetcher);
   expect(fetcher).not.toHaveBeenCalled();
 });
+it('repairs mixed reproduction negotiation fields before spending an action', async () => {
+  const w = createWorld({ population: 2 });
+  const r = makeRecord(w);
+  const accepted = { type: 'chat', text: '我接受', acceptProposalId: 'p-123' };
+  let requests = 0;
+  const fetcher = vi.fn(async (_url: unknown, init: RequestInit) => {
+    if (requests++) {
+      expect(JSON.parse(init.body as string).repair).toContain('只能填写一个');
+      return response(JSON.stringify({ action: accepted }));
+    }
+    return response(
+      JSON.stringify({
+        action: {
+          ...accepted,
+          proposal: { kind: 'reproduce', targetId: 2 },
+        },
+      }),
+    );
+  }) as any;
+  const result = await requestDecision(r, async () => {}, '', fetcher);
+  expect(result.decision?.action).toEqual(accepted);
+  expect(result.attempts).toHaveLength(2);
+  expect(w.agents[0].ap).toBe(5);
+  expect(w.seq).toBe(0);
+});
 it('pauses immediately on authentication failure', async () => {
   const r = makeRecord(createWorld({ population: 1 }));
   const fetcher = vi.fn(async () => new Response('{}', { status: 401 })) as any;

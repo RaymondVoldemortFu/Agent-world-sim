@@ -8,7 +8,20 @@ import {
   type Inventory,
   type Item,
 } from './types';
-export const RULES_VERSION = 'mvp-1.0.0';
+import { RECIPES } from './recipes';
+export const RULES_VERSION = 'mvp-1.7.0';
+export const SUPPORTED_REPLAY_VERSIONS = [
+  'mvp-1.0.0',
+  'mvp-1.1.0',
+  'mvp-1.2.0',
+  'mvp-1.3.0',
+  'mvp-1.4.0',
+  'mvp-1.5.0',
+  'mvp-1.6.0',
+  RULES_VERSION,
+];
+export const SHOUT_AP = 2;
+export const SHOUT_RADIUS = 2;
 export function rand(w: { rng: number }) {
   w.rng = (Math.imul(1664525, w.rng) + 1013904223) >>> 0;
   return w.rng / 4294967296;
@@ -59,8 +72,12 @@ export function makeAgent(w: World, x: number, y: number, parents: number[] = []
     y,
     hp: 100,
     hunger: parents.length ? 60 : 100,
+    social: { loneliness: 0, lastSpokeDay: w.tick - 1, depressed: false },
     ap: 0,
     inventory: parents.length ? {} : { food: 3 },
+    foodBatches: parents.length
+      ? []
+      : [{ quantity: 3, expiresOnDay: w.tick + w.config.foodShelfLifeDays }],
     personality: Array.from({ length: 5 }, () => Math.round(rand(w) * 100) / 100),
     recipes: [],
     intent: '',
@@ -131,6 +148,7 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
         farm: 0,
         farmFood: 0,
         ground: {},
+        groundFoodBatches: [],
         shelter: null,
         _height: h,
       } as Tile);
@@ -140,7 +158,7 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
     t.terrain = i < sorted.length * 0.55 ? 'plain' : i < sorted.length * 0.85 ? 'hill' : 'mountain';
     t.resources =
       t.terrain === 'plain'
-        ? { food: 6, wood: 8 + Math.floor(rand(w) * 9) }
+        ? { food: config.plainFoodCapacity, wood: 8 + Math.floor(rand(w) * 9) }
         : t.terrain === 'hill'
           ? { food: 3, wood: 5, stone: 12 }
           : { stone: 20, ...(rand(w) < 0.4 ? { ore: 10 } : {}) };
@@ -166,10 +184,10 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
         : Math.max(0, Math.min(size - 1, center[1] + Math.floor(rand(w) * 7) - 3));
     const t = tileAt(w, x, y);
     t.terrain = 'plain';
-    t.resources.food = 6;
+    t.resources.food = config.plainFoodCapacity;
     t.resources.wood = Math.max(8, t.resources.wood ?? 0);
     const a = makeAgent(w, x, y);
-    a.ap = 3;
+    a.ap = config.dailyAP;
     w.agents.push(a);
   }
   const sexes: ('F' | 'M')[] = w.agents.map((_, i) =>
@@ -180,6 +198,9 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
     [sexes[i], sexes[j]] = [sexes[j], sexes[i]];
   }
   w.agents.forEach((a, i) => (a.sex = sexes[i] as 'F' | 'M'));
+  const prophet = w.agents[0];
+  prophet.role = 'prophet';
+  prophet.recipes = RECIPES.map((recipe) => recipe.id);
   w.cursor.ids = w.agents.map((a) => a.id);
   return w;
 }

@@ -39,6 +39,36 @@ class ProxyTest(unittest.IsolatedAsyncioTestCase):
         config = await self.client.get('/api/config')
         self.assertNotIn('test-only-secret', config.text)
 
+    async def test_full_survey_has_a_bounded_larger_context_allowance(self):
+        calls = []
+        def handler(request):
+            calls.append(request)
+            return httpx.Response(200, json={'choices': [{'message': {'content': '{}'}}]})
+        await self.provider(handler)
+        for survey, size, expected in [(None, 30000, 413), ({'radius': 3}, 30000, 200), ({'radius': 3}, 41000, 413)]:
+            response = await self.client.post('/api/decision', json={
+                'runId': 'test', 'decisionId': 'survey-size',
+                'context': {'lastSurvey': survey, 'data': 'x' * size}})
+            self.assertEqual(response.status_code, expected)
+        self.assertEqual(len(calls), 1)
+
+    async def test_prophet_receives_farming_guidance_only_on_action_requests(self):
+        prompts = []
+        def handler(request):
+            prompts.append(json.loads(request.content)['messages'][0]['content'])
+            return httpx.Response(200, json={'choices': [{'message': {'content': '{}'}}]})
+        await self.provider(handler)
+        for role, kind in [('prophet', 'action'), (None, 'action'), ('prophet', 'reflection')]:
+            response = await self.client.post('/api/decision', json={
+                'runId': 'test', 'decisionId': 'farm-prompt', 'kind': kind,
+                'context': {'self': {'id': 1, 'role': role}}})
+            self.assertEqual(response.status_code, 200)
+        self.assertIn('先知专属农耕知识', prompts[0])
+        self.assertIn('累计执行3次terraform{}', prompts[0])
+        self.assertIn('每个日末产3份食物', prompts[0])
+        self.assertNotIn('先知专属农耕知识', prompts[1])
+        self.assertNotIn('先知专属农耕知识', prompts[2])
+
     async def test_upstream_errors_are_sanitized(self):
         await self.provider(lambda _: httpx.Response(401, text='test-only-secret internal diagnostic'))
         response = await self.client.post('/api/decision', json={'runId': 'test', 'decisionId': 'test:1', 'context': {}})

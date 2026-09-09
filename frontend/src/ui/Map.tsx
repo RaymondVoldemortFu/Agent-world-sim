@@ -138,6 +138,19 @@ export default function Map({
         );
       }
     }
+    for (const a of world.agents.filter((a) => a.corpse)) {
+      const x = ox + (a.corpse!.x + 0.22) * unit;
+      const y = oy + (a.corpse!.y + 0.8) * unit;
+      const r = Math.max(2, unit * 0.09);
+      ctx.strokeStyle = '#b5a7a2';
+      ctx.lineWidth = Math.max(1.5, unit * 0.045);
+      ctx.beginPath();
+      ctx.moveTo(x - r, y - r);
+      ctx.lineTo(x + r, y + r);
+      ctx.moveTo(x + r, y - r);
+      ctx.lineTo(x - r, y + r);
+      ctx.stroke();
+    }
     const groups = new globalThis.Map<string, typeof world.agents>();
     for (const a of world.agents.filter((a) => !a.death)) {
       const k = `${a.x},${a.y}`;

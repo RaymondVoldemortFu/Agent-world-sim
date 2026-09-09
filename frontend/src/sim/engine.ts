@@ -12,31 +12,30 @@ import {
   type Inventory,
   type Item,
   type Metrics,
+  type FoodBatch,
 } from './types';
-import { add, count, tileAt, weight, living, adult, visible, makeAgent } from './world';
-export const RECIPES = [
-  {
-    id: 'basic_tool',
-    materials: { wood: 2 } as Inventory,
-    method: 'combine',
-    product: 'basic_tool' as Item,
-    tool: undefined as Item | undefined,
-  },
-  {
-    id: 'advanced_tool',
-    materials: { wood: 2, stone: 2 } as Inventory,
-    method: 'grind',
-    product: 'advanced_tool' as Item,
-    tool: 'basic_tool' as Item | undefined,
-  },
-  {
-    id: 'shelter',
-    materials: { wood: 6, stone: 2 } as Inventory,
-    method: 'assemble',
-    product: undefined,
-    tool: undefined as Item | undefined,
-  },
-];
+import {
+  add,
+  count,
+  tileAt,
+  weight,
+  living,
+  adult,
+  visible,
+  makeAgent,
+  SHOUT_AP,
+  SHOUT_RADIUS,
+} from './world';
+import { foodSummary, mergeFood, splitFood, validateFood } from './food';
+import { SURVEY_AP, SURVEY_RADIUS, visibleCorpses, surveyArea } from './perception';
+import { SOCIAL_RULES, lonelinessCapacity, recordSpeaking } from './social';
+import { RECIPES } from './recipes';
+export { RECIPES } from './recipes';
+export function decisionIdFor(w: World, agentId: number) {
+  const c = w.cursor;
+  const free = c.ids[c.index] === agentId ? (c.freeActions ?? 0) : 0;
+  return `${w.id}:${w.tick}:${c.phase}:${c.round}:${agentId}${free ? `:free-${free}` : ''}`;
+}
 export function nextTask(
   w: World,
 ): { kind: 'action' | 'reflection'; agent: Agent; id: string } | null {
@@ -48,11 +47,12 @@ export function nextTask(
       return {
         kind: c.phase === 'actions' ? 'action' : 'reflection',
         agent: a,
-        id: `${w.id}:${w.tick}:${c.phase}:${c.round}:${a.id}`,
+        id: decisionIdFor(w, a.id),
       };
     c.index++;
+    if (c.freeActions) c.freeActions = 0;
   }
-  if (c.phase === 'actions' && c.round < 2) {
+  if (c.phase === 'actions' && c.round < (w.config.dailyAP ?? 3) - 1) {
     c.round++;
     c.index = 0;
     return nextTask(w);
@@ -75,6 +75,7 @@ const inventoryNames: Record<Item, string> = {
   advanced_tool: '高级工具',
 };
 class Tx {
+  private memoryIndex = 0;
   agents = new Set<number>();
   tiles = new Set<number>();
   recipients: number[] = [];
@@ -102,7 +103,7 @@ class Tx {
   ) {
     this.a(a);
     const m: Memory = {
-      id: `${this.w.seq + 1}:${a.id}:${a.memories.length}:${a.inbox.length}`,
+      id: `${this.w.seq + 1}:${a.id}:${this.memoryIndex++}`,
       day: this.w.tick,
       content: text,
       source,
@@ -122,9 +123,15 @@ class Tx {
     a.hp = 0;
     a.ap = 0;
     a.death = { day: this.w.tick, cause };
+    if (['mvp-1.6.0', 'mvp-1.7.0'].includes(this.w.rulesVersion))
+      a.corpse = { x: a.x, y: a.y, sinceDay: this.w.tick };
     const t = this.t(a.x, a.y);
+    validateFood(a.inventory, a.foodBatches);
+    validateFood(t.ground, t.groundFoodBatches);
+    t.groundFoodBatches = mergeFood(t.groundFoodBatches, a.foodBatches);
     for (const [k, v] of Object.entries(a.inventory)) add(t.ground, k as Item, v!);
     a.inventory = {};
+    a.foodBatches = [];
     a.pregnancy = undefined;
     this.w.counters.deaths++;
   }
@@ -202,10 +209,12 @@ function sameMaterials(a: Inventory, b: Inventory) {
 }
 const allowedChild = new Set([
   'move',
-  'look',
+  'shout',
+  'survey',
   'eat',
   'take',
   'drop',
+  'place',
   'give',
   'feed',
   'chat',
@@ -239,11 +248,47 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
       targetId = id;
       return b!;
     };
-    const transfer = (from: Inventory, to: Inventory, item: Item, n: number, capacity: boolean) => {
+    const transfer = (
+      from: Inventory,
+      to: Inventory,
+      item: Item,
+      n: number,
+      capacity: boolean,
+      fromFood?: FoodBatch[],
+      toFood?: FoodBatch[],
+    ) => {
       assert(count(from, item) >= n, '物品不足');
-      assert(!capacity || weight(to) + (item.endsWith('tool') ? 2 : 1) * n <= 12, '携带空间不足');
+      assert(
+        !capacity ||
+          weight(to) + (item.endsWith('tool') ? 2 : 1) * n <= (w.config.inventoryCapacity ?? 12),
+        '携带空间不足',
+      );
+      let food: [FoodBatch[], FoodBatch[]] | undefined;
+      if (item === 'food') {
+        validateFood(from, fromFood);
+        validateFood(to, toFood);
+        const { taken, remaining } = splitFood(fromFood, n);
+        food = [remaining, mergeFood(toFood, taken)];
+      }
       add(from, item, -n);
       add(to, item, n);
+      return food;
+    };
+    const eatFood = (source: Agent, recipient: Agent, quantity: number) => {
+      assert(count(source.inventory, 'food') >= quantity, '食物不足');
+      validateFood(source.inventory, source.foodBatches);
+      const { taken, remaining } = splitFood(source.foodBatches, quantity, w.tick);
+      const { fresh, spoiled } = foodSummary(taken, w.tick);
+      source.foodBatches = remaining;
+      add(source.inventory, 'food', -quantity);
+      const restored = 20 * fresh + spoiled * (w.config.spoiledFoodHungerGain ?? 0);
+      tx.a(recipient).hunger = Math.min(100, recipient.hunger + restored);
+      const damage = spoiled * w.config.spoiledFoodDamage;
+      recipient.hp = Math.max(0, recipient.hp - damage);
+      if (recipient.hp === 0) tx.die(recipient, '食物腐败');
+      return spoiled
+        ? `，其中 ${spoiled} 份已腐败，恢复 ${restored} 点饱食度，损失 ${damage} 点生命${recipient.death ? '并死亡' : ''}`
+        : '';
     };
     switch (action.type) {
       case 'move': {
@@ -256,9 +301,13 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
         text = `${brief(a)} 移动到 (${x}, ${y})`;
         break;
       }
-      case 'look':
-        text = `${brief(a)} 观察了周围`;
+      case 'survey': {
+        assert(a.ap >= SURVEY_AP - 1, `全力观察需要 ${SURVEY_AP} AP`);
+        a.ap -= SURVEY_AP - 1;
+        a.survey = surveyArea(w, a);
+        text = `${brief(a)} 全力观察三格内环境：${a.survey.tiles.length} 个地块、${a.survey.people.length} 名活人、${a.survey.corpses.length} 具尸体`;
         break;
+      }
       case 'wait':
         text = `${brief(a)} 暂作等待`;
         break;
@@ -275,8 +324,18 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
         );
         assert(resource !== 'ore' || count(a.inventory, 'advanced_tool') > 0, '采矿需要高级工具');
         const available = farm ? t.farmFood : count(t.resources, resource);
-        const n = Math.min(available, farm ? 4 : 2, 12 - weight(a.inventory));
+        const n = Math.min(
+          available,
+          farm ? 4 : 2,
+          (w.config.inventoryCapacity ?? 12) - weight(a.inventory),
+        );
         assert(n > 0, available <= 0 ? '这里的资源已耗尽' : '携带空间不足');
+        if (resource === 'food') {
+          validateFood(a.inventory, a.foodBatches);
+          a.foodBatches = mergeFood(a.foodBatches, [
+            { quantity: n, expiresOnDay: w.tick + w.config.foodShelfLifeDays },
+          ]);
+        }
         tx.t(a.x, a.y);
         add(a.inventory, resource, n);
         if (farm) t.farmFood -= n;
@@ -286,25 +345,64 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
         break;
       }
       case 'eat':
-        assert(count(a.inventory, 'food') >= action.quantity, '食物不足');
-        add(a.inventory, 'food', -action.quantity);
-        a.hunger = Math.min(100, a.hunger + 20 * action.quantity);
-        text = `${brief(a)} 吃了 ${action.quantity} 份食物`;
+        text = `${brief(a)} 吃了 ${action.quantity} 份食物${eatFood(a, a, action.quantity)}`;
         break;
-      case 'take':
+      case 'take': {
         tx.t(a.x, a.y);
-        transfer(t.ground, a.inventory, action.item, action.quantity, true);
+        const food = transfer(
+          t.ground,
+          a.inventory,
+          action.item,
+          action.quantity,
+          true,
+          t.groundFoodBatches,
+          a.foodBatches,
+        );
+        if (food) [t.groundFoodBatches, a.foodBatches] = food;
         text = `${brief(a)} 从地面拿取 ${action.quantity} 份${inventoryNames[action.item]}`;
         break;
-      case 'drop':
-        tx.t(a.x, a.y);
-        transfer(a.inventory, t.ground, action.item, action.quantity, false);
-        text = `${brief(a)} 放下 ${action.quantity} 份${inventoryNames[action.item]}`;
+      }
+      case 'drop': {
+        assert(
+          count(a.inventory, action.item) >= action.quantity,
+          '背包物品不足；丢弃只能销毁手上物品',
+        );
+        if (action.item === 'food') {
+          validateFood(a.inventory, a.foodBatches);
+          a.foodBatches = splitFood(a.foodBatches, action.quantity).remaining;
+        }
+        add(a.inventory, action.item, -action.quantity);
+        text = `${brief(a)} 丢弃并销毁 ${action.quantity} 份${inventoryNames[action.item]}`;
         break;
+      }
+      case 'place': {
+        tx.t(a.x, a.y);
+        const food = transfer(
+          a.inventory,
+          t.ground,
+          action.item,
+          action.quantity,
+          false,
+          a.foodBatches,
+          t.groundFoodBatches,
+        );
+        if (food) [a.foodBatches, t.groundFoodBatches] = food;
+        text = `${brief(a)} 在地上放置 ${action.quantity} 份${inventoryNames[action.item]}`;
+        break;
+      }
       case 'give': {
         const b = target(action.targetId);
         tx.a(b);
-        transfer(a.inventory, b.inventory, action.item, action.quantity, true);
+        const food = transfer(
+          a.inventory,
+          b.inventory,
+          action.item,
+          action.quantity,
+          true,
+          a.foodBatches,
+          b.foodBatches,
+        );
+        if (food) [a.foodBatches, b.foodBatches] = food;
         tx.a(b);
         w.counters.gifts++;
         text = `${brief(a)} 向 ${brief(b)} 给予 ${action.quantity} 份${inventoryNames[action.item]}`;
@@ -312,11 +410,9 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
       }
       case 'feed': {
         const b = target(action.targetId);
-        assert(count(a.inventory, 'food') > 0, '没有食物');
-        add(a.inventory, 'food', -1);
-        tx.a(b).hunger = Math.min(100, b.hunger + 20);
+        const result = eatFood(a, b, 1);
         w.counters.gifts++;
-        text = `${brief(a)} 用食物照料 ${brief(b)}`;
+        text = `${brief(a)} 用食物照料 ${brief(b)}${result}`;
         break;
       }
       case 'attack': {
@@ -330,6 +426,13 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
         }
         break;
       }
+      case 'shout': {
+        assert(a.ap >= SHOUT_AP - 1, `大声说话需要 ${SHOUT_AP} AP`);
+        a.ap -= SHOUT_AP - 1;
+        w.counters.chats++;
+        text = `${brief(a)} 大声说：“${action.text}”`;
+        break;
+      }
       case 'chat': {
         if (action.targetId !== undefined) target(action.targetId, true);
         assert(
@@ -340,6 +443,22 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
         if (action.proposal) {
           const b = target(action.proposal.targetId, true);
           assert(adult(w, a) && adult(w, b), '只有成年人能协商繁衍');
+          assert(a.sex !== b.sex, '繁衍提议双方必须为异性');
+          const existing = w.proposals.find(
+            (p) =>
+              !p.revoked &&
+              !p.completed &&
+              w.tick < p.day + 3 &&
+              ((p.from === a.id && p.to === b.id) || (p.from === b.id && p.to === a.id)),
+          );
+          assert(
+            !existing,
+            existing?.accepted
+              ? `已有接受的提议 ${existing.id}，满足条件后双方使用 reproduce{proposalId:"${existing.id}"}`
+              : existing?.to === a.id
+                ? `已有对方向你发出的提议 ${existing.id}；愿意接受请使用 chat{acceptProposalId:"${existing.id}",text:"我接受"}`
+                : `你已发出提议 ${existing?.id}，等待对方用 acceptProposalId 接受；不要重复提议`,
+          );
           w.proposals.push({
             id: `p-${w.seq + 1}`,
             from: a.id,
@@ -357,7 +476,13 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
             p && p.to === a.id && !p.revoked && !p.completed && w.tick < p.day + 3,
             '提议不存在、过期或不属于你',
           );
-          target(p!.from, true);
+          const b = target(p!.from, true);
+          assert(adult(w, a) && adult(w, b), '只有成年人能协商繁衍');
+          assert(a.sex !== b.sex, '繁衍提议双方必须为异性');
+          assert(
+            !p!.accepted,
+            `提议 ${p!.id} 已接受，满足条件后使用 reproduce{proposalId:"${p!.id}"}`,
+          );
           p!.accepted = true;
         }
         if (action.revokeProposalId) {
@@ -379,7 +504,10 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
             (!r.tool || count(a.inventory, r.tool) > 0),
         );
         if (r?.product)
-          assert(weight(a.inventory) - weight(r.materials) + 2 <= 12, '成品超出携带容量');
+          assert(
+            weight(a.inventory) - weight(r.materials) + 2 <= (w.config.inventoryCapacity ?? 12),
+            '成品超出携带容量',
+          );
         w.counters.experiments++;
         if (!r) {
           text = `${brief(a)} 的材料实验未产生结果`;
@@ -398,10 +526,13 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
       }
       case 'craft': {
         const r = RECIPES.find((r) => r.id === action.recipeId);
-        assert(r?.product && a.recipes.includes(r.id), '你尚未验证该物品配方');
+        assert(r?.product && a.recipes.includes(r.id), '你尚未掌握该物品配方');
         requireMaterials(a.inventory, r!.materials);
         assert(!r!.tool || count(a.inventory, r!.tool) > 0, '缺少工具');
-        assert(weight(a.inventory) - weight(r!.materials) + 2 <= 12, '成品超出携带容量');
+        assert(
+          weight(a.inventory) - weight(r!.materials) + 2 <= (w.config.inventoryCapacity ?? 12),
+          '成品超出携带容量',
+        );
         consume(a.inventory, r!.materials);
         add(a.inventory, r!.product!, 1);
         text = `${brief(a)} 制作了${inventoryNames[r!.product!]}`;
@@ -424,7 +555,7 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
       case 'build': {
         assert(
           action.recipeId === 'shelter' && a.recipes.includes('shelter'),
-          '你尚未验证棚屋配方',
+          '你尚未掌握棚屋配方',
         );
         assert(!t.shelter?.complete, '这里已有棚屋');
         const progress = t.shelter ?? { materials: {}, labor: 0, complete: false };
@@ -454,13 +585,16 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
       case 'reproduce': {
         const p = w.proposals.find((p) => p.id === action.proposalId);
         assert(
-          p &&
-            p.accepted &&
-            !p.revoked &&
-            !p.completed &&
-            w.tick < p.day + 3 &&
-            (p.from === a.id || p.to === a.id),
-          '需要有效且双方接受的提议',
+          p && (p.from === a.id || p.to === a.id),
+          '提议不存在或你不是参与者，请查看 proposals 中的有效 ID',
+        );
+        assert(
+          !p!.revoked && !p!.completed && w.tick < p!.day + 3,
+          '提议已撤回、完成或过期，请查看 proposals 中的有效 ID',
+        );
+        assert(
+          p!.accepted,
+          `提议 ${p!.id} 尚未接受，须由 #${p!.to} 使用 chat{acceptProposalId:"${p!.id}",text:"我接受"}，文本中说接受不会更新提议`,
         );
         const b = target(p!.from === a.id ? p!.to : p!.from);
         assert(adult(w, a) && adult(w, b) && a.sex !== b.sex, '双方必须为成年异性');
@@ -494,16 +628,20 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
     success &&
     action.type !== 'eat' &&
     action.type !== 'wait' &&
-    action.type !== 'look' &&
+    action.type !== 'survey' &&
     action.type !== 'experiment'
   ) {
     for (const b of living(w))
-      if (visible(b, origin) || visible(b, a))
+      if (
+        action.type === 'shout'
+          ? Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) <= SHOUT_RADIUS
+          : visible(b, origin) || visible(b, a)
+      )
         tx.tell(
           b,
           text,
-          action.type === 'chat' ? 'heard' : 'observed',
-          action.type === 'chat' ? a.id : undefined,
+          action.type === 'chat' || action.type === 'shout' ? 'heard' : 'observed',
+          action.type === 'chat' || action.type === 'shout' ? a.id : undefined,
           action.type === 'attack' ? 8 : 2,
         );
     if (targetId) {
@@ -529,7 +667,23 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
     a.memories.push(m);
     a.memories = a.memories.slice(-200);
   }
-  w.cursor.index++;
+  if (
+    success &&
+    (action.type === 'chat' || action.type === 'shout') &&
+    tx.recipients.some((id) => id !== a.id)
+  ) {
+    const wasDepressed = a.social?.depressed;
+    recordSpeaking(a, w.tick);
+    if (wasDepressed && !a.social?.depressed)
+      tx.tell(a, `${brief(a)} 的孤单已清空，抑郁状态解除`, 'observed', undefined, 6);
+  }
+  if (success && action.type === 'drop' && w.config.freeDrop) {
+    a.ap++;
+    w.cursor.freeActions = (w.cursor.freeActions ?? 0) + 1;
+  } else {
+    w.cursor.index++;
+    if (w.cursor.freeActions) w.cursor.freeActions = 0;
+  }
   return tx.finish(type, text, decisionId, success, a, targetId);
 }
 export function reflect(w: World, agentId: number, r: Reflection, decisionId: string) {
@@ -565,6 +719,8 @@ export function reflect(w: World, agentId: number, r: Reflection, decisionId: st
 }
 export function metrics(w: World): Metrics {
   const alive = living(w);
+  const dated = w.rulesVersion !== 'mvp-1.0.0';
+  const stores = [...alive.map((a) => a.foodBatches), ...w.tiles.map((t) => t.groundFoodBatches)];
   return {
     day: w.tick,
     alive: alive.length,
@@ -572,9 +728,25 @@ export function metrics(w: World): Metrics {
     food:
       alive.reduce((n, a) => n + count(a.inventory, 'food'), 0) +
       w.tiles.reduce((n, t) => n + count(t.ground, 'food') + t.farmFood, 0),
+    ...(dated
+      ? {
+          freshFood:
+            stores.reduce((n, batches) => n + foodSummary(batches, w.tick).fresh, 0) +
+            w.tiles.reduce((n, t) => n + t.farmFood, 0),
+          spoiledFood: stores.reduce((n, batches) => n + foodSummary(batches, w.tick).spoiled, 0),
+        }
+      : {}),
     wildFood: w.tiles.reduce((n, t) => n + count(t.resources, 'food'), 0),
     farms: w.tiles.filter((t) => t.farm >= 3).length,
     avgHunger: alive.length ? alive.reduce((n, a) => n + a.hunger, 0) / alive.length : 0,
+    ...(['mvp-1.4.0', 'mvp-1.5.0', 'mvp-1.6.0', 'mvp-1.7.0'].includes(w.rulesVersion)
+      ? {
+          avgLoneliness: alive.length
+            ? alive.reduce((n, a) => n + (a.social?.loneliness ?? 0), 0) / alive.length
+            : 0,
+          depressed: alive.filter((a) => a.social?.depressed).length,
+        }
+      : {}),
     calls: w.usage.calls,
     inputTokens: w.usage.inputTokens,
     outputTokens: w.usage.outputTokens,
@@ -590,9 +762,12 @@ export function endDay(w: World): WorldEvent {
     if (t.farm >= 3) {
       if (t.farmFood < 12) tx.t(t.x, t.y).farmFood = Math.min(12, t.farmFood + 3);
     } else {
-      const max = t.terrain === 'plain' ? 6 : t.terrain === 'hill' ? 3 : 0;
-      if (w.tick - t.lastGather >= 2 && count(t.resources, 'food') < max)
-        add(tx.t(t.x, t.y).resources, 'food', 1);
+      const max = t.terrain === 'plain' ? w.config.plainFoodCapacity : t.terrain === 'hill' ? 3 : 0;
+      const recovered =
+        t.terrain === 'plain'
+          ? w.tick + 1 - t.lastGather >= w.config.plainRecoveryDays
+          : w.tick - t.lastGather >= 2;
+      if (recovered && count(t.resources, 'food') < max) add(tx.t(t.x, t.y).resources, 'food', 1);
     }
   }
   for (const a of living(w)) {
@@ -609,6 +784,31 @@ export function endDay(w: World): WorldEvent {
     const shelter = tileAt(w, a.x, a.y).shelter?.complete;
     if (shelter && a.hunger >= 40) a.hp = Math.min(100, a.hp + 8);
     else if (a.hunger >= 60) a.hp = Math.min(100, a.hp + 5);
+    if (a.social) {
+      if (day - a.social.lastSpokeDay >= SOCIAL_RULES.silentDaysBeforeIncrease)
+        a.social.loneliness = Math.min(
+          lonelinessCapacity(a),
+          a.social.loneliness + SOCIAL_RULES.lonelinessPerDay,
+        );
+      if (a.social.loneliness >= lonelinessCapacity(a)) a.social.depressed = true;
+      if (a.social.depressed) {
+        a.hp = Math.max(0, a.hp - SOCIAL_RULES.depressionDamagePerDay);
+        tx.tell(
+          a,
+          `${brief(a)} 处于抑郁状态，生命损失 ${SOCIAL_RULES.depressionDamagePerDay}；孤单 ${a.social.loneliness}/${lonelinessCapacity(a)}，清空后解除`,
+          'observed',
+          undefined,
+          6,
+        );
+        if (a.hp === 0) {
+          tx.die(a, '抑郁');
+          tx.tell(a, `${brief(a)} 因抑郁死亡`, 'observed', undefined, 10);
+          for (const b of living(w))
+            if (visible(a, b)) tx.tell(b, `${brief(a)} 因抑郁死亡`, 'observed', undefined, 10);
+          continue;
+        }
+      }
+    }
     a.age++;
   }
   for (const a of [...living(w)])
@@ -630,12 +830,12 @@ export function endDay(w: World): WorldEvent {
   else {
     w.tick++;
     const alive = living(w);
-    for (const a of alive) tx.a(a).ap = adult(w, a) ? 3 : 1;
+    for (const a of alive) tx.a(a).ap = w.config.dailyAP;
     w.cursor = { phase: 'actions', round: 0, index: 0, ids: alive.map((a) => a.id) };
   }
   const e = tx.finish(
     'day_end',
-    `第 ${day} 天结束 · ${living(w).length} 人存活${born ? ` · ${born} 人出生` : ''}${dead ? ` · ${dead} 人饥饿死亡` : ''}`,
+    `第 ${day} 天结束 · ${living(w).length} 人存活${born ? ` · ${born} 人出生` : ''}${dead ? ` · ${dead} 人死亡` : ''}`,
     `${w.id}:${day}:end`,
     true,
     undefined,
@@ -670,6 +870,7 @@ export function applyEvent(w: World, e: WorldEvent): World {
   return w;
 }
 export function observe(w: World, a: Agent) {
+  const dated = w.rulesVersion !== 'mvp-1.0.0';
   const tiles = w.tiles.filter((t) => visible(a, t));
   const ids = new Set(
     living(w)
@@ -687,6 +888,42 @@ export function observe(w: World, a: Agent) {
   const view = {
     day: w.tick,
     round: w.cursor.round + 1,
+    ...(dated
+      ? {
+          physicalRules: {
+            ...(['mvp-1.3.0', 'mvp-1.4.0', 'mvp-1.5.0', 'mvp-1.6.0', 'mvp-1.7.0'].includes(
+              w.rulesVersion,
+            )
+              ? { automaticObservation: true, shoutAP: SHOUT_AP, shoutRadius: SHOUT_RADIUS }
+              : {}),
+            ...(a.social ? { social: SOCIAL_RULES } : {}),
+            ...(['mvp-1.5.0', 'mvp-1.6.0', 'mvp-1.7.0'].includes(w.rulesVersion)
+              ? { dropDeletesItem: true, placeAP: 1 }
+              : {}),
+            ...(['mvp-1.6.0', 'mvp-1.7.0'].includes(w.rulesVersion)
+              ? { corpsesPersist: true, surveyAP: SURVEY_AP, surveyRadius: SURVEY_RADIUS }
+              : {}),
+            plainFoodCapacity: w.config.plainFoodCapacity,
+            plainRecoveryDays: w.config.plainRecoveryDays,
+            foodShelfLifeDays: w.config.foodShelfLifeDays,
+            ...(w.config.inventoryCapacity !== undefined
+              ? { inventoryCapacity: w.config.inventoryCapacity }
+              : {}),
+            spoiledFoodDamage: w.config.spoiledFoodDamage,
+            ...(w.config.spoiledFoodHungerGain !== undefined
+              ? { spoiledFoodHungerGain: w.config.spoiledFoodHungerGain }
+              : {}),
+            ...(w.config.dailyAP !== undefined
+              ? { dailyAP: w.config.dailyAP, freeDrop: w.config.freeDrop }
+              : {}),
+            reproductionSuccessRate: w.config.reproductionSuccessRate,
+            gestationDays: w.config.gestation,
+          },
+        }
+      : {}),
+    ...(['mvp-1.6.0', 'mvp-1.7.0'].includes(w.rulesVersion)
+      ? { corpses: visibleCorpses(w, a), lastSurvey: a.survey }
+      : {}),
     currentTile: {
       x: a.x,
       y: a.y,
@@ -694,9 +931,21 @@ export function observe(w: World, a: Agent) {
       farmProgress: here.farm,
       farmFood: here.farmFood,
       ground: here.ground,
+      ...(dated
+        ? {
+            groundFood: {
+              ...foodSummary(here.groundFoodBatches, w.tick),
+              batches: here.groundFoodBatches,
+            },
+            foodRecoveryBeginsOnDay:
+              here.terrain === 'plain' && here.farm < 3 && here.lastGather > 0
+                ? here.lastGather + w.config.plainRecoveryDays
+                : undefined,
+          }
+        : {}),
     },
     physicalOptions: {
-      freeCapacity: 12 - weight(a.inventory),
+      freeCapacity: (w.config.inventoryCapacity ?? 12) - weight(a.inventory),
       validMoves: [
         [1, 0],
         [-1, 0],
@@ -712,6 +961,7 @@ export function observe(w: World, a: Agent) {
     self: {
       id: a.id,
       name: a.name,
+      ...(a.role ? { role: a.role } : {}),
       sex: a.sex,
       ageStage: adult(w, a) ? 'adult' : 'child',
       parents: a.parents,
@@ -720,6 +970,8 @@ export function observe(w: World, a: Agent) {
       ap: a.ap,
       position: [a.x, a.y],
       inventory: a.inventory,
+      ...(a.social ? { social: { ...a.social, capacity: lonelinessCapacity(a) } } : {}),
+      ...(dated ? { food: { ...foodSummary(a.foodBatches, w.tick), batches: a.foodBatches } } : {}),
       personality: {
         openness: a.personality[0],
         conscientiousness: a.personality[1],
@@ -736,6 +988,15 @@ export function observe(w: World, a: Agent) {
       terrain: t.terrain,
       resources: t.resources,
       ground: t.ground,
+      ...(dated
+        ? {
+            groundFood: foodSummary(t.groundFoodBatches, w.tick),
+            foodRecoveryBeginsOnDay:
+              t.terrain === 'plain' && t.farm < 3 && t.lastGather > 0
+                ? t.lastGather + w.config.plainRecoveryDays
+                : undefined,
+          }
+        : {}),
       farmProgress: t.farm,
       farmFood: t.farmFood,
       shelter: t.shelter,
@@ -745,6 +1006,7 @@ export function observe(w: World, a: Agent) {
       .map((b) => ({
         id: b.id,
         name: b.name,
+        ...(b.role ? { role: b.role } : {}),
         sex: b.sex,
         ageStage: adult(w, b) ? 'adult' : 'child',
         x: b.x,
@@ -788,7 +1050,11 @@ export function changeBudget(w: World, patch: Record<string, unknown>) {
     Object.keys(patch).every((key) => (BUDGET_KEYS as readonly string[]).includes(key)),
     '只能修改运行预算',
   );
-  const config = ConfigSchema.parse({ ...w.config, ...patch });
+  const config = ConfigSchema.parse({
+    ...w.config,
+    inventoryCapacity: w.config.inventoryCapacity ?? 12,
+    ...patch,
+  });
   const tx = new Tx(w);
   w.config = config;
   return tx.finish('config_changed', '运行预算已更新', `${w.id}:budget:${w.seq + 1}`, true);

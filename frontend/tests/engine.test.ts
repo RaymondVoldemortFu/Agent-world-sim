@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createWorld, hashWorld, tileAt, count, living } from '../src/sim/world';
 import { act, endDay, nextTask, observe, applyEvent, reflect } from '../src/sim/engine';
 import { ActionSchema, type World, type Action, type WorldEvent } from '../src/sim/types';
-const make = () => createWorld({ size: 16, population: 3, days: 100, seed: 41 }, 'test');
+const make = () => createWorld({ size: 16, population: 3, days: 100, seed: 41, inventoryCapacity: 12 }, 'test');
 function doAction(w: World, id: number, action: Action) {
   const a = w.agents.find((a) => a.id === id)!;
   a.ap = Math.max(1, a.ap);
@@ -20,7 +20,7 @@ describe('physical world', () => {
     const before = JSON.stringify([a.inventory, t.ground]);
     expect(doAction(w, a.id, { type: 'take', item: 'wood', quantity: 2 }).success).toBe(false);
     expect(JSON.stringify([a.inventory, t.ground])).toBe(before);
-    expect(a.ap).toBe(2);
+    expect(a.ap).toBe(4);
   });
   it('does not enforce social land claims', () => {
     const w = make(),
@@ -29,6 +29,7 @@ describe('physical world', () => {
     t.farm = 3;
     t.farmFood = 5;
     t.ground = { food: 2 };
+    t.groundFoodBatches = [{ quantity: 2, expiresOnDay: 4 }];
     expect(doAction(w, a.id, { type: 'harvest' }).success).toBe(true);
     expect(t.farmFood).toBe(1);
     expect(doAction(w, a.id, { type: 'take', item: 'food', quantity: 2 }).success).toBe(true);
@@ -41,6 +42,7 @@ describe('physical world', () => {
     b.y = a.y;
     b.hp = 20;
     b.inventory = { food: 4, wood: 2 };
+    b.foodBatches = [{ quantity: 4, expiresOnDay: 4 }];
     expect(doAction(w, a.id, { type: 'attack', targetId: b.id }).success).toBe(true);
     expect(b.death?.cause).toBe('攻击');
     expect(tileAt(w, a.x, a.y).ground).toEqual({ food: 4, wood: 2 });
@@ -57,20 +59,25 @@ describe('physical world', () => {
     expect(a.death?.cause).toBe('饥饿');
     expect(tileAt(w, a.x, a.y).ground.food).toBeGreaterThanOrEqual(3);
   });
-  it('recovers food only after two untouched days', () => {
+  it('recovers plain food after five days and caps it at four', () => {
     const w = make(),
       a = w.agents[0],
       t = tileAt(w, a.x, a.y);
     t.terrain = 'plain';
-    t.resources.food = 6;
+    t.resources.food = 4;
     doAction(w, a.id, { type: 'gather', resource: 'food' });
-    expect(t.resources.food).toBe(4);
+    expect(t.resources.food).toBe(2);
+    for (let i = 0; i < 4; i++) {
+      endDay(w);
+      expect(t.resources.food).toBe(2);
+    }
+    expect(w.tick).toBe(5);
+    endDay(w);
+    expect(w.tick).toBe(6);
+    expect(t.resources.food).toBe(3);
+    endDay(w);
     endDay(w);
     expect(t.resources.food).toBe(4);
-    endDay(w);
-    expect(t.resources.food).toBe(4);
-    endDay(w);
-    expect(t.resources.food).toBe(5);
   });
   it('shares farming labor and shelter construction', () => {
     const w = make(),
@@ -81,6 +88,7 @@ describe('physical world', () => {
     t.terrain = 'plain';
     a.inventory = { basic_tool: 1 };
     b.inventory = { basic_tool: 1 };
+    a.foodBatches = b.foodBatches = [];
     doAction(w, a.id, { type: 'terraform' });
     doAction(w, b.id, { type: 'terraform' });
     doAction(w, a.id, { type: 'terraform' });
@@ -105,6 +113,8 @@ describe('knowledge and perception', () => {
   it('withholds distant events, private inventory, memories and hidden recipes', () => {
     const w = make(),
       [a, b, c] = w.agents;
+    a.recipes = [];
+    delete a.role;
     a.x = 3;
     a.y = 3;
     b.x = 4;
@@ -137,6 +147,8 @@ describe('knowledge and perception', () => {
   it('allows discovery and taught knowledge only after validation', () => {
     const w = make(),
       [a, b] = w.agents;
+    a.recipes = [];
+    delete a.role;
     b.x = a.x;
     b.y = a.y;
     a.inventory = { wood: 4 };
@@ -192,6 +204,17 @@ describe('reproduction', () => {
     doAction(w, b, { type: 'chat', targetId: a, text: '我愿意。', acceptProposalId: id });
     return id;
   }
+  it('guarantees conception for successful mating across random states', () => {
+    for (const rng of [0, 1, 41, 100, 9999, 4294967295]) {
+      const { w, a, b } = pair();
+      w.rng = rng;
+      const p = agree(w, a.id, b.id);
+      expect(doAction(w, a.id, { type: 'reproduce', proposalId: p }).success).toBe(true);
+      expect(doAction(w, b.id, { type: 'reproduce', proposalId: p }).success).toBe(true);
+      expect(a.pregnancy).toEqual({ father: b.id, due: w.tick + 5 });
+      expect(w.proposals.at(-1)?.completed).toBe(true);
+    }
+  });
   it('requires both explicit actions and creates a private independent child', () => {
     const { w, a, b } = pair();
     const p = agree(w, a.id, b.id);
@@ -212,7 +235,7 @@ describe('reproduction', () => {
     expect(child.recipes).toEqual([]);
     expect(child.age).toBe(0);
     expect(child.hunger).toBe(60);
-    expect(child.ap).toBe(1);
+    expect(child.ap).toBe(5);
     expect(w.counters.births).toBe(1);
     expect(a.pregnancy).toBeUndefined();
   });
@@ -235,6 +258,35 @@ describe('reproduction', () => {
   });
 });
 describe('scheduler and history', () => {
+  it('keeps simultaneous death notifications unique after memory windows fill', () => {
+    const w = make(),
+      [a, b, witness] = w.agents;
+    for (const agent of w.agents) {
+      agent.x = witness.x;
+      agent.y = witness.y;
+    }
+    a.hp = b.hp = 20;
+    a.hunger = b.hunger = 0;
+    witness.memories = Array.from({ length: 200 }, (_, i) => ({
+      id: `old-${i}`,
+      day: 1,
+      content: '旧经历',
+      source: 'observed' as const,
+      eventIds: [],
+      importance: 2,
+    }));
+    witness.inbox = witness.memories.slice(-12);
+    const replay = structuredClone(w);
+    const event = endDay(w);
+    applyEvent(replay, event);
+    expect(new Set(witness.inbox.map((m) => m.id)).size).toBe(witness.inbox.length);
+    expect(hashWorld(replay)).toBe(hashWorld(w));
+    for (let i = 0; i < 15; i++) {
+      const event = doAction(w, witness.id, { type: 'wait' });
+      applyEvent(replay, event);
+      expect(hashWorld(replay)).toBe(hashWorld(w));
+    }
+  });
   it('uses each ID once per micro-round and records deterministic replay', () => {
     const w = make();
     w.config.days = 5;
