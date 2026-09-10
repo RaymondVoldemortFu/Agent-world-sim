@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import {
+  EcoActionSchema,
+  type EcoAction,
+  type Ecology,
+  type EcoBody,
+  type EcoTile,
+  type Brain,
+  type BrainUpdate,
+} from '../ecology/types';
 export type Item = 'food' | 'wood' | 'stone' | 'ore' | 'basic_tool' | 'advanced_tool';
 export type Inventory = Partial<Record<Item, number>>;
 export interface FoodBatch {
@@ -13,6 +22,7 @@ const materials = z
 const item = z.enum(['food', 'wood', 'stone', 'ore', 'basic_tool', 'advanced_tool']);
 export const ActionSchema = z
   .discriminatedUnion('type', [
+    EcoActionSchema,
     z
       .object({
         type: z.literal('move'),
@@ -21,6 +31,7 @@ export const ActionSchema = z
       })
       .strict(),
     z.object({ type: z.literal('shout'), text: z.string().min(1).max(240) }).strict(),
+    z.object({ type: z.literal('public_speak'), text: z.string().min(1).max(240) }).strict(),
     z.object({ type: z.literal('survey') }).strict(),
     z.object({ type: z.literal('harvest') }).strict(),
     z.object({ type: z.literal('terraform') }).strict(),
@@ -81,9 +92,10 @@ export const ActionSchema = z
   });
 // Explicit union keeps downstream action narrowing precise despite Zod's dynamic literal list.
 export type Action =
+  | EcoAction
   | { type: 'move'; dx: number; dy: number }
   | { type: 'harvest' | 'terraform' | 'wait' | 'survey' }
-  | { type: 'shout'; text: string }
+  | { type: 'shout' | 'public_speak'; text: string }
   | { type: 'gather'; resource: 'food' | 'wood' | 'stone' | 'ore' }
   | { type: 'eat'; quantity: number }
   | { type: 'take' | 'drop' | 'place'; item: Item; quantity: number }
@@ -108,7 +120,12 @@ export const DecisionSchema = z
     memory_note: z.string().max(400).optional(),
   })
   .strict();
-export type Decision = { intent: string; action: Action; memory_note?: string };
+export type Decision = {
+  intent: string;
+  action: Action;
+  memory_note?: string;
+  brainUpdate?: BrainUpdate;
+};
 export const ReflectionSchema = z
   .object({
     summary: z.string().max(800),
@@ -135,6 +152,8 @@ export interface Memory {
   importance: number;
 }
 export interface Agent {
+  eco?: EcoBody;
+  brain?: Brain;
   id: number;
   name: string;
   role?: 'prophet';
@@ -162,6 +181,7 @@ export interface Agent {
   survey?: SurveyResult;
 }
 export interface Tile {
+  eco?: EcoTile;
   x: number;
   y: number;
   terrain: 'plain' | 'hill' | 'mountain';
@@ -184,11 +204,22 @@ export interface Proposal {
   completed: boolean;
 }
 export interface Config {
+  worldModel: 'legacy' | 'ecology';
+  controller: 'atomic' | 'hybrid';
+  ecoPreset: 'forager' | 'settlement' | 'village';
+  startDay: number;
+  regions: number;
+  llmDailyCalls: number;
+  llmDailyTokens: number;
+  contextWindow?: number;
   size: number;
   population: number;
   days: number;
   seed: number;
-  spawn: 'clusters' | 'uniform';
+  spawn: 'clusters' | 'uniform' | 'compact';
+  wildlifeEnabled: boolean;
+  beastRespawnDays?: number;
+  beastPowerMultiplier?: number;
   gestation: number;
   adultAge: number;
   populationLimit: number;
@@ -211,13 +242,24 @@ export interface Config {
 }
 export const ConfigSchema = z
   .object({
+    worldModel: z.enum(['legacy', 'ecology']).default('legacy'),
+    controller: z.enum(['atomic', 'hybrid']).default('hybrid'),
+    ecoPreset: z.enum(['forager', 'settlement', 'village']).default('forager'),
+    startDay: z.number().int().min(1).max(365).default(160),
+    regions: z.number().int().min(1).max(3).default(3),
+    llmDailyCalls: z.number().int().min(0).max(3).default(2),
+    llmDailyTokens: z.number().int().min(0).max(30000).default(6000),
+    contextWindow: z.number().int().min(4000).max(262144).optional(),
     size: z.number().int().min(10).max(64),
     population: z.number().int().min(1).max(60),
     days: z.number().int().min(1).max(1000),
     seed: z.number().int().min(0).max(4294967295),
-    spawn: z.enum(['clusters', 'uniform']),
+    spawn: z.enum(['clusters', 'uniform', 'compact']),
+    wildlifeEnabled: z.boolean().default(true),
+    beastRespawnDays: z.number().int().min(0).max(365).default(10),
+    beastPowerMultiplier: z.number().min(0.1).max(5).default(1),
     gestation: z.number().int().min(1).max(300),
-    adultAge: z.number().int().min(1).max(1000),
+    adultAge: z.number().int().min(1).max(40000),
     populationLimit: z.number().int().min(1).max(200),
     maxCalls: z.number().int().positive(),
     maxTokens: z.number().int().positive(),
@@ -238,11 +280,22 @@ export const ConfigSchema = z
   })
   .strict();
 export const DEFAULT_CONFIG: Config = {
+  worldModel: 'legacy',
+  controller: 'hybrid',
+  ecoPreset: 'forager',
+  startDay: 160,
+  regions: 3,
+  llmDailyCalls: 2,
+  llmDailyTokens: 6000,
+  contextWindow: 65536,
   size: 15,
   population: 20,
   days: 100,
   seed: 20260909,
   spawn: 'clusters',
+  wildlifeEnabled: true,
+  beastRespawnDays: 10,
+  beastPowerMultiplier: 1,
   gestation: 5,
   adultAge: 20,
   populationLimit: 60,
@@ -298,6 +351,9 @@ export interface Usage {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  contextCompressions?: number;
+  compressionInputTokens?: number;
+  compressionOutputTokens?: number;
   elapsedMs: number;
   errors: number;
   repairs: number;
@@ -307,6 +363,7 @@ export interface Usage {
   model: string;
 }
 export interface World {
+  ecology?: Ecology;
   version: 1;
   rulesVersion: string;
   id: string;
@@ -362,6 +419,17 @@ export interface WorldEvent {
   patch: Patch;
 }
 export interface Attempt {
+  id?: string;
+  purpose?: 'decision' | 'compression' | 'deep_reflection';
+  contextTrace?: {
+    turnId: string;
+    epoch: number;
+    estimatedTokens: number;
+    reusedMessages: number;
+    recalled: number;
+    compressed: boolean;
+    prefixHash: string;
+  };
   promptVersion?: string;
   status: number;
   content?: string;
@@ -371,7 +439,11 @@ export interface Attempt {
   model?: string;
 }
 export interface DecisionRecord {
+  storageExperiment?: string;
+  brainContext?: unknown;
+  source?: 'rule' | 'plan' | 'llm' | 'fallback';
   contextSource?: 'captured' | 'reconstructed-from-events';
+  contextPruned?: boolean;
   originalSavedContext?: unknown;
   rulesVersion?: string;
   schemaVersion?: string;
@@ -395,6 +467,7 @@ export interface Snapshot {
   world: World;
 }
 export interface Bundle {
+  contextNodes?: unknown[];
   elapsedMs?: number;
   format: 'agent-world-v1';
   world: World;

@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { createWorld, RULES_VERSION } from '../sim/world';
+import { createWorld, RULES_VERSION, canRunWorld } from '../sim/world';
 import { act, endDay, nextTask, reflect, changeBudget, resetFailureStreak } from '../sim/engine';
 import {
   db,
@@ -66,7 +66,7 @@ async function loop(single = false) {
         world = saved.world;
         elapsed = saved.elapsedMs;
       }
-      if (world!.rulesVersion !== RULES_VERSION)
+      if (!canRunWorld(world!))
         throw new Error('该存档使用旧版规则，可查看与回放。请新建世界运行当前规则。');
       if (world!.usage.consecutiveErrors >= 5) {
         const e = resetFailureStreak(world!);

@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-10",
+  "format": "mysql-delta-v1",
+  "historicalExperimentsMigrated": 26,
+  "historicalEventsVerified": 100035,
+  "historicalSourceBytesRemoved": 9433583714,
+  "readyDatabaseExperimentsIncludingTests": 31,
+  "databaseEventCountIncludingTests": 101047,
+  "compressedDeltasBytes": 48884416,
+  "databaseDataFilesBytes": 492060672,
+  "remainingArtifactsBytes": 79842311,
+  "mainExperiment": {
+    "name": "eco-hybrid-v2-100day-20",
+    "events": 42904,
+    "rawEventsBytes": 3042287916,
+    "compressedDeltasBytes": 26648382,
+    "dialogueEvents": 1110,
+    "hashChecks": {
+      "0": "3bacd620",
+      "21912": "2f4d3579",
+      "42904": "210023e6"
+    },
+    "snapshotsVerified": 79
+  },
+  "apiLatencySamplesMs": {
+    "chronicleSubstring": 204,
+    "chatPage": 40,
+    "agentExperiences": 68,
+    "agentTimeStats": 57
+  },
+  "tests": [
+    "6 storage tests",
+    "3 experiment-control tests",
+    "Playwright replay/current/time-stats/gzip import",
+    "4-day 6-person scripted pause/resume/completion",
+    "TypeScript build"
+  ],
+  "retainedFileFixtures": [
+    "e2e-fixture",
+    "e2e-search-fixture"
+  ],
+  "notes": "Database physical size includes indexes and allocated InnoDB pages for test experiments; excludes shared MySQL redo/undo logs. API timings are local samples during migration, not performance guarantees."
+}

@@ -1,0 +1,18 @@
+{
+  "worldModel": "ecology",
+  "controller": "hybrid",
+  "ecoPreset": "forager",
+  "size": 15,
+  "regions": 3,
+  "population": 20,
+  "days": 100,
+  "seed": 20260910,
+  "startDay": 180,
+  "dailyAP": 5,
+  "inventoryCapacity": 15,
+  "llmDailyCalls": 2,
+  "llmDailyTokens": 6500,
+  "maxCalls": 4500,
+  "maxTokens": 15000000,
+  "maxMinutes": 720
+}

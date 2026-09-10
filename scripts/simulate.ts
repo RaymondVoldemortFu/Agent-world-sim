@@ -1,3 +1,6 @@
+import { DatabaseJournal } from './database-journal';
+import { ruleDecision } from '../frontend/src/brain/controller';
+import { observeEco } from '../frontend/src/ecology/engine';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -10,6 +13,7 @@ import {
   count,
   weight,
   RULES_VERSION,
+  canRunWorld,
 } from '../frontend/src/sim/world';
 import { foodSummary } from '../frontend/src/sim/food';
 import { act, endDay, nextTask, reflect, metrics } from '../frontend/src/sim/engine';
@@ -59,22 +63,40 @@ process.on('exit', () => {
     if (fs.readFileSync(lockFile, 'utf8') === String(process.pid)) fs.unlinkSync(lockFile);
   } catch {}
 });
-if (args.includes('--resume') && !fs.existsSync(file('checkpoint.json')))
+const storageMode = arg('storage', 'mysql');
+if (!['mysql', 'files'].includes(storageMode)) throw new Error('Invalid --storage');
+const database =
+  storageMode === 'mysql'
+    ? new DatabaseJournal(path.basename(out), arg('api', 'http://127.0.0.1:8000'))
+    : undefined;
+if (database && path.dirname(out) !== path.resolve('artifacts'))
+  throw new Error('MySQL experiments must use artifacts/<name>');
+if (!database && fs.existsSync(file('storage.json')))
+  throw new Error('This archive is in MySQL; select a different output directory');
+const savedDatabase = await database?.restore();
+if (args.includes('--resume') && !savedDatabase && !fs.existsSync(file('checkpoint.json')))
   throw new Error('No checkpoint to resume');
 if (
   !args.includes('--resume') &&
-  fs.existsSync(file('checkpoint.json')) &&
+  (savedDatabase || fs.existsSync(file('checkpoint.json'))) &&
   !args.includes('--overwrite')
 )
   throw new Error(
     'Output already exists; use --resume or choose a new output directory (--overwrite explicitly replaces this experiment)',
   );
+if (database && args.includes('--overwrite') && savedDatabase)
+  throw new Error('Choose a new name for a MySQL experiment');
+if (database && !savedDatabase && fs.existsSync(file('checkpoint.json')))
+  throw new Error('Migrate this file archive before resuming in MySQL');
 const write = (name: string, data: unknown) => {
   fs.writeFileSync(file(name + '.tmp'), JSON.stringify(data));
   fs.renameSync(file(name + '.tmp'), file(name));
 };
 const config: Partial<Config> = {
+  worldModel: 'ecology',
+  controller: 'hybrid',
   ...(args.includes('--config') ? JSON.parse(fs.readFileSync(arg('config', ''), 'utf8')) : {}),
+  ...(args.includes('--spawn') ? { spawn: arg('spawn', '') as Config['spawn'] } : {}),
   ...Object.fromEntries(
     ['days', 'population', 'seed', 'size']
       .filter((key) => args.includes(`--${key}`))
@@ -84,57 +106,75 @@ const config: Partial<Config> = {
 let w: World;
 let pending: DecisionRecord | undefined;
 let elapsed = 0;
-if (args.includes('--resume') && fs.existsSync(file('checkpoint.json'))) {
-  const c = JSON.parse(fs.readFileSync(file('checkpoint.json'), 'utf8'));
+if (args.includes('--resume')) {
+  const c = savedDatabase ?? JSON.parse(fs.readFileSync(file('checkpoint.json'), 'utf8'));
   w = c.world;
-  if (w.rulesVersion !== RULES_VERSION && w.cursor.phase !== 'complete')
+  if (!canRunWorld(w) && w.cursor.phase !== 'complete')
     throw new Error(
       'Legacy experiment is read-only under the current rules; use a new output directory',
     );
   elapsed = c.elapsedMs;
   if (fs.existsSync(file('pending.json')))
     pending = JSON.parse(fs.readFileSync(file('pending.json'), 'utf8'));
-  const committed = await repairJournal(out, w);
+  const committed = database ? new Set<string>() : await repairJournal(out, w);
   if (pending && committed.has(pending.id)) pending = undefined;
   console.log(`RESUME ${out} day=${w.tick} seq=${w.seq}`);
 } else {
   w = createWorld(config, `${mode}-${Date.now()}`);
   const initial = { seq: 0, day: 1, hash: hashWorld(w), world: structuredClone(w) };
-  fs.writeFileSync(file('snapshots.jsonl'), JSON.stringify(initial) + '\n');
-  fs.writeFileSync(file('events.jsonl'), '');
-  fs.writeFileSync(file('decisions.jsonl'), '');
-  write('checkpoint.json', { world: w, elapsedMs: 0 });
+  if (database) await database.initialize(w);
+  else {
+    fs.writeFileSync(file('snapshots.jsonl'), JSON.stringify(initial) + '\n');
+    fs.writeFileSync(file('events.jsonl'), '');
+    fs.writeFileSync(file('decisions.jsonl'), '');
+    write('checkpoint.json', { world: w, elapsedMs: 0 });
+  }
 }
-fs.appendFileSync(
-  file('implementation.jsonl'),
-  JSON.stringify({
-    at: new Date().toISOString(),
-    afterSeq: w.seq,
-    execution: { concurrency: Number(arg('concurrency', '6')), scheduler: 'contiguous-spatial-v1' },
-    files: Object.fromEntries(
-      [
-        'frontend/src/sim/scheduler.ts',
-        'frontend/src/sim/engine.ts',
-        'frontend/src/sim/world.ts',
-        'frontend/src/sim/types.ts',
-        'frontend/src/sim/food.ts',
-        'frontend/src/sim/social.ts',
-        'frontend/src/sim/perception.ts',
-        'frontend/src/sim/recipes.ts',
-        'frontend/src/runtime/model.ts',
-        'backend/app/main.py',
-      ].map((p) => [p, createHash('sha256').update(fs.readFileSync(p)).digest('hex')]),
-    ),
-  }) + '\n',
-);
+const implementation = {
+  at: new Date().toISOString(),
+  afterSeq: w.seq,
+  execution: { concurrency: Number(arg('concurrency', '6')), scheduler: 'contiguous-spatial-v1' },
+  files: Object.fromEntries(
+    [
+      'frontend/src/sim/scheduler.ts',
+      'frontend/src/sim/engine.ts',
+      'frontend/src/sim/world.ts',
+      'frontend/src/sim/types.ts',
+      'frontend/src/sim/food.ts',
+      'frontend/src/sim/social.ts',
+      'frontend/src/sim/perception.ts',
+      'frontend/src/sim/recipes.ts',
+      'frontend/src/runtime/model.ts',
+      'frontend/src/brain/controller.ts',
+      'frontend/src/ecology/engine.ts',
+      'frontend/src/ecology/environment.ts',
+      'frontend/src/ecology/catalog.ts',
+      'frontend/src/ecology/world.ts',
+      'frontend/src/ecology/batches.ts',
+      'frontend/src/ecology/types.ts',
+      'frontend/src/sim/transaction.ts',
+      'backend/app/hybrid_prompt.py',
+      'backend/app/main.py',
+    ].map((p) => [p, createHash('sha256').update(fs.readFileSync(p)).digest('hex')]),
+  ),
+};
+if (database) {
+  await database.metadata('implementation-append', implementation);
+  await database.metadata('initial-config.json', w.config);
+} else fs.appendFileSync(file('implementation.jsonl'), JSON.stringify(implementation) + '\n');
 const concurrency = Math.max(1, Math.min(16, Number(arg('concurrency', '6'))));
 if (!Number.isInteger(concurrency)) throw new Error('Invalid concurrency');
-fs.mkdirSync(file('pending'), { recursive: true });
+if (!database) fs.mkdirSync(file('pending'), { recursive: true });
 const pendingFile = (id: string) =>
   'pending/' + createHash('sha256').update(id).digest('hex') + '.json';
 const started = Date.now();
 let stopped = args.includes('--initialize-only');
-write('runner-settings.json', { mode, concurrency, api: arg('api', 'http://127.0.0.1:8000') });
+write('runner-settings.json', {
+  mode,
+  concurrency,
+  storage: storageMode,
+  api: arg('api', 'http://127.0.0.1:8000'),
+});
 const stop = () => {
   stopped = true;
   write('runner-status.json', { pid: process.pid, state: 'stopping' });
@@ -194,23 +234,35 @@ try {
     );
     let event: WorldEvent;
     if (tasks.length) {
-      const outcomes = await Promise.allSettled(
-        tasks.map(async (task) => {
-          const path = file(pendingFile(task.id));
-          const saved = fs.existsSync(path)
-            ? JSON.parse(fs.readFileSync(path, 'utf8'))
+      const prepared = tasks.map((task) => {
+        const p = file(pendingFile(task.id));
+        const saved = database
+          ? database.pending.get(task.id)
+          : fs.existsSync(p)
+            ? JSON.parse(fs.readFileSync(p, 'utf8'))
             : pending?.id === task.id
               ? pending
               : undefined;
-          let record = prepareRecord(w, task, saved);
+        const record = prepareRecord(w, task, saved);
+        if (database) record.storageExperiment = database.name;
+        return record;
+      });
+      if (mode === 'llm' && prepared.some((r) => r.status === 'pending'))
+        await database?.flush(w, elapsed + Date.now() - started);
+      const outcomes = await Promise.allSettled(
+        tasks.map(async (task, i) => {
+          let record = prepared[i];
           if (mode === 'llm')
             record = await requestDecision(
               record,
-              async (r) => write(pendingFile(r.id), r),
+              async (r) => (database ? database.savePending(r) : write(pendingFile(r.id), r)),
               arg('api', 'http://127.0.0.1:8000'),
             );
           else {
-            if (task.kind === 'action') record.decision = scripted(w, task.agent.id);
+            if (w.ecology) {
+              record = makeRecord(w, task);
+              if (!record.decision) record.decision = ruleDecision(observeEco(w, task.agent));
+            } else if (task.kind === 'action') record.decision = scripted(w, task.agent.id);
             else record.reflection = { summary: '记录近期生存经历。', claims: [] };
             record.status = 'received';
           }
@@ -234,14 +286,17 @@ try {
             ? act(w, task.agent.id, record.decision!, task.id)
             : reflect(w, task.agent.id, record.reflection!, task.id);
         record.status = 'committed';
-        append('decisions.jsonl', record);
-        append('events.jsonl', event);
-        write('checkpoint.json', { world: w, elapsedMs: elapsed + Date.now() - started });
-        if (fs.existsSync(file(pendingFile(record.id))))
-          fs.unlinkSync(file(pendingFile(record.id)));
-        if (pending?.id === record.id) {
-          pending = undefined;
-          if (fs.existsSync(file('pending.json'))) fs.unlinkSync(file('pending.json'));
+        if (database) await database.append(w, event, record, elapsed + Date.now() - started);
+        else {
+          append('decisions.jsonl', record);
+          append('events.jsonl', event);
+          write('checkpoint.json', { world: w, elapsedMs: elapsed + Date.now() - started });
+          if (fs.existsSync(file(pendingFile(record.id))))
+            fs.unlinkSync(file(pendingFile(record.id)));
+          if (pending?.id === record.id) {
+            pending = undefined;
+            if (fs.existsSync(file('pending.json'))) fs.unlinkSync(file('pending.json'));
+          }
         }
         // A free drop keeps this actor's paid slot. Other prefetched replies stay
         // durable in pending until the actor completes that slot.
@@ -251,10 +306,13 @@ try {
       continue;
     }
     event = endDay(w);
-    append('events.jsonl', event);
-    write('checkpoint.json', { world: w, elapsedMs: elapsed + Date.now() - started });
+    if (database) await database.append(w, event, undefined, elapsed + Date.now() - started);
+    else {
+      append('events.jsonl', event);
+      write('checkpoint.json', { world: w, elapsedMs: elapsed + Date.now() - started });
+    }
     if (event.type === 'day_end') {
-      if (event.day % 5 === 0 || (w.cursor.phase as string) === 'complete')
+      if (!database && (event.day % 5 === 0 || (w.cursor.phase as string) === 'complete'))
         append('snapshots.jsonl', {
           seq: w.seq,
           day: event.day,
@@ -271,15 +329,18 @@ try {
       );
     }
   }
+  await database?.flush(w, elapsed + Date.now() - started);
 } catch (e) {
   reason = e instanceof Error ? e.message : String(e);
   process.exitCode = 1;
   console.error(reason);
 }
 // Export only the durable checkpoint and its journal prefix. Streaming avoids the JS string limit.
-const checkpoint = JSON.parse(fs.readFileSync(file('checkpoint.json'), 'utf8'));
+const checkpoint = database
+  ? await database.request()
+  : JSON.parse(fs.readFileSync(file('checkpoint.json'), 'utf8'));
 w = checkpoint.world;
-write('summary.json', {
+const summary = {
   mode,
   status: w.cursor.phase === 'complete' ? 'complete' : 'paused',
   reason,
@@ -292,11 +353,15 @@ write('summary.json', {
   hash: hashWorld(w),
   elapsedMs: checkpoint.elapsedMs,
   concurrency,
-});
-await exportJournal(out, w, checkpoint.elapsedMs);
+};
+if (database) await database.metadata('summary.json', summary);
+else {
+  write('summary.json', summary);
+  await exportJournal(out, w, checkpoint.elapsedMs, arg('api', 'http://127.0.0.1:8000'));
+}
 write('runner-status.json', {
   pid: process.pid,
   state: process.exitCode ? 'failed' : w.cursor.phase === 'complete' ? 'completed' : 'paused',
   reason,
 });
-console.log(`RESULT ${file('summary.json')} ${reason}`);
+console.log(`RESULT ${database ? `mysql:${database.name}` : file('summary.json')} ${reason}`);

@@ -9,6 +9,7 @@ import {
 } from '../sim/types';
 import { hashWorld, SUPPORTED_REPLAY_VERSIONS } from '../sim/world';
 import { applyEvent } from '../sim/engine';
+import { contextHeads, transferContexts } from './context-archive';
 interface StoredRun {
   id: string;
   updated: number;
@@ -62,32 +63,45 @@ export async function commit(
   });
 }
 export async function exportBundle(w: World): Promise<Bundle> {
-  return db.transaction('r', db.runs, db.events, db.decisions, db.snapshots, async () => {
-    const stored = await db.runs.get(w.id);
-    const current = stored?.world ?? w;
-    const [events, records, snapshots] = await Promise.all([
-      db.events
-        .where('runId')
-        .equals(w.id)
-        .and((e) => e.seq <= current.seq)
-        .toArray(),
-      db.decisions.where('runId').equals(w.id).toArray(),
-      db.snapshots
-        .where('runId')
-        .equals(w.id)
-        .and((s) => s.seq <= current.seq)
-        .toArray(),
-    ]);
-    const ids = new Set(events.map((e) => e.decisionId));
-    return {
-      format: 'agent-world-v1' as const,
-      elapsedMs: stored?.elapsedMs ?? 0,
-      world: current,
-      events,
-      decisions: records.filter((r) => r.status === 'committed' && ids.has(r.id)),
-      snapshots,
-    };
-  });
+  const bundle = await db.transaction(
+    'r',
+    db.runs,
+    db.events,
+    db.decisions,
+    db.snapshots,
+    async () => {
+      const stored = await db.runs.get(w.id);
+      const current = stored?.world ?? w;
+      const [events, records, snapshots] = await Promise.all([
+        db.events
+          .where('runId')
+          .equals(w.id)
+          .and((e) => e.seq <= current.seq)
+          .toArray(),
+        db.decisions.where('runId').equals(w.id).toArray(),
+        db.snapshots
+          .where('runId')
+          .equals(w.id)
+          .and((s) => s.seq <= current.seq)
+          .toArray(),
+      ]);
+      const ids = new Set(events.map((e) => e.decisionId));
+      return {
+        format: 'agent-world-v1' as const,
+        elapsedMs: stored?.elapsedMs ?? 0,
+        world: current,
+        events,
+        decisions: records.filter((r) => r.status === 'committed' && ids.has(r.id)),
+        snapshots,
+      };
+    },
+  );
+  const contextNodes = await transferContexts(
+    'export',
+    bundle.world.id,
+    contextHeads(bundle.world, bundle.decisions),
+  );
+  return { ...bundle, contextNodes };
 }
 export function validateBundle(b: unknown): asserts b is Bundle {
   const v = b as Bundle;
@@ -107,7 +121,8 @@ export function validateBundle(b: unknown): asserts b is Bundle {
   )
     throw new Error('数据包记录不完整');
   if (
-    v.world.tiles.length !== v.world.config.size ** 2 ||
+    v.world.tiles.length !==
+      v.world.config.size ** 2 * (v.world.ecology ? v.world.config.regions : 1) ||
     new Set(v.world.agents.map((a) => a.id)).size !== v.world.agents.length
   )
     throw new Error('世界结构不合法');
@@ -123,6 +138,7 @@ export function validateBundle(b: unknown): asserts b is Bundle {
 }
 export async function importBundle(b: Bundle) {
   validateBundle(b);
+  await transferContexts('import', b.world.id, contextHeads(b.world, b.decisions), b.contextNodes);
   await db.transaction('rw', db.runs, db.events, db.decisions, db.snapshots, async () => {
     await db.events.where('runId').equals(b.world.id).delete();
     await db.decisions.where('runId').equals(b.world.id).delete();

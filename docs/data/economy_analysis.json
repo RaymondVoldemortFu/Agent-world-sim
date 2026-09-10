@@ -1,0 +1,2189 @@
+{
+  "assumptions": {
+    "seed": 20260910,
+    "days": 365,
+    "kcal_per_food_day": 2500,
+    "population": 48,
+    "workers": 32,
+    "children": 8,
+    "elders": 8,
+    "child_food_equivalent": 0.6,
+    "elder_food_equivalent": 0.85,
+    "productive_ap_per_worker_day": 3.5,
+    "grain": {
+      "area_ha": 20,
+      "yield_kg_ha": 750,
+      "seed_kg_ha": 120,
+      "field_retention": 0.92,
+      "milling_retention": 0.96,
+      "kcal_kg": 3400
+    },
+    "pulse": {
+      "area_ha": 4,
+      "yield_kg_ha": 500,
+      "seed_kg_ha": 100,
+      "field_retention": 0.9,
+      "milling_retention": 0.95,
+      "kcal_kg": 3300
+    },
+    "fallow_ha": 12,
+    "reference_storage_age_days": 180,
+    "storage_retention_180_days": 0.94,
+    "wild_supplement_fd_year": 1800,
+    "animal_supplement_fd_year": 180,
+    "harvest_window_days": 20,
+    "harvest_ap_ha_novice": 90,
+    "harvest_ap_ha_practiced": 67.5,
+    "essential_nonharvest_ap_day": 40,
+    "ore_kg_batch": 10,
+    "ore_fe_fraction": 0.45,
+    "iron_recovery": 0.4,
+    "refining_retention": 0.8,
+    "finishing_retention": 0.9,
+    "charcoal_kg_batch": 20,
+    "charcoal_yield_dry_wood": 0.25,
+    "stone_axe_supply_ap": 5,
+    "iron_axe_supply_ap": 22.5,
+    "stone_axe_wood_kg_ap": 20,
+    "iron_axe_wood_kg_ap": 35
+  },
+  "adult_equivalents": 43.599999999999994,
+  "annual_demand_fd": 15913.999999999998,
+  "static_food": {
+    "grain_fd": 13990.809599999999,
+    "pulse_fd": 1632.708,
+    "total_fd": 17603.5176,
+    "surplus_fd": 1689.517600000001,
+    "food_ratio": 1.1061654895060953,
+    "grain_before_storage_fd": 14883.84,
+    "pulse_before_storage_fd": 1755.6
+  },
+  "balanced_preset": {
+    "grain_ha": 22,
+    "pulse_ha": 6,
+    "fallow_ha": 14,
+    "annual_food_fd": 19818.95256,
+    "food_ratio": 1.245378444137238,
+    "food_ratio_with_15pct_extra_demand": 1.082937777510642,
+    "harvest_capacity_26days_ap": 1872.0,
+    "practiced_grain_harvest_ap": 1485.0
+  },
+  "wild_food_ceiling": {
+    "plants_fd": 7500,
+    "fish_fd": 1452.0000000000002,
+    "game_fd": 480.0,
+    "accessible_retained_fd": 6960.816,
+    "supported_adult_equivalents": 19.07072876712329
+  },
+  "harvest": {
+    "capacity_ap": 1440.0,
+    "required_ap": {
+      "novice": 1800,
+      "practiced": 1350.0
+    },
+    "harvested_fraction": {
+      "novice": 0.8,
+      "practiced": 1
+    }
+  },
+  "sensitivity": [
+    {
+      "grain_kg_ha": 450,
+      "storage_retention": 0.75,
+      "annual_food_fd": 9370.4,
+      "food_ratio": 0.5888
+    },
+    {
+      "grain_kg_ha": 450,
+      "storage_retention": 0.85,
+      "annual_food_fd": 10138.1,
+      "food_ratio": 0.6371
+    },
+    {
+      "grain_kg_ha": 450,
+      "storage_retention": 0.94,
+      "annual_food_fd": 10829.02,
+      "food_ratio": 0.6805
+    },
+    {
+      "grain_kg_ha": 600,
+      "storage_retention": 0.75,
+      "annual_food_fd": 12073.0,
+      "food_ratio": 0.7586
+    },
+    {
+      "grain_kg_ha": 600,
+      "storage_retention": 0.85,
+      "annual_food_fd": 13201.03,
+      "food_ratio": 0.8295
+    },
+    {
+      "grain_kg_ha": 600,
+      "storage_retention": 0.94,
+      "annual_food_fd": 14216.27,
+      "food_ratio": 0.8933
+    },
+    {
+      "grain_kg_ha": 750,
+      "storage_retention": 0.75,
+      "annual_food_fd": 14775.59,
+      "food_ratio": 0.9285
+    },
+    {
+      "grain_kg_ha": 750,
+      "storage_retention": 0.85,
+      "annual_food_fd": 16263.97,
+      "food_ratio": 1.022
+    },
+    {
+      "grain_kg_ha": 750,
+      "storage_retention": 0.94,
+      "annual_food_fd": 17603.52,
+      "food_ratio": 1.1062
+    },
+    {
+      "grain_kg_ha": 900,
+      "storage_retention": 0.75,
+      "annual_food_fd": 17478.18,
+      "food_ratio": 1.0983
+    },
+    {
+      "grain_kg_ha": 900,
+      "storage_retention": 0.85,
+      "annual_food_fd": 19326.91,
+      "food_ratio": 1.2145
+    },
+    {
+      "grain_kg_ha": 900,
+      "storage_retention": 0.94,
+      "annual_food_fd": 20990.77,
+      "food_ratio": 1.319
+    },
+    {
+      "grain_kg_ha": 1100,
+      "storage_retention": 0.75,
+      "annual_food_fd": 21081.64,
+      "food_ratio": 1.3247
+    },
+    {
+      "grain_kg_ha": 1100,
+      "storage_retention": 0.85,
+      "annual_food_fd": 23410.83,
+      "food_ratio": 1.4711
+    },
+    {
+      "grain_kg_ha": 1100,
+      "storage_retention": 0.94,
+      "annual_food_fd": 25507.1,
+      "food_ratio": 1.6028
+    }
+  ],
+  "scenarios": {
+    "normal_good_storage": {
+      "deficit_fd": 0.0,
+      "shortage_days": 0,
+      "min_stock_fd": 3879.61,
+      "end_stock_fd": 19211.98,
+      "storage_loss_fd": 7214.25,
+      "overflow_fd": 6356.41,
+      "trace": [
+        {
+          "elapsed_day": 1,
+          "calendar_day": 216,
+          "stock_fd": 19211.98
+        },
+        {
+          "elapsed_day": 31,
+          "calendar_day": 246,
+          "stock_fd": 17918.75
+        },
+        {
+          "elapsed_day": 61,
+          "calendar_day": 276,
+          "stock_fd": 16672.5
+        },
+        {
+          "elapsed_day": 91,
+          "calendar_day": 306,
+          "stock_fd": 15439.04
+        },
+        {
+          "elapsed_day": 121,
+          "calendar_day": 336,
+          "stock_fd": 14208.0
+        },
+        {
+          "elapsed_day": 151,
+          "calendar_day": 1,
+          "stock_fd": 12847.1
+        },
+        {
+          "elapsed_day": 181,
+          "calendar_day": 31,
+          "stock_fd": 11500.15
+        },
+        {
+          "elapsed_day": 211,
+          "calendar_day": 61,
+          "stock_fd": 10169.27
+        },
+        {
+          "elapsed_day": 241,
+          "calendar_day": 91,
+          "stock_fd": 8883.28
+        },
+        {
+          "elapsed_day": 271,
+          "calendar_day": 121,
+          "stock_fd": 7610.49
+        },
+        {
+          "elapsed_day": 301,
+          "calendar_day": 151,
+          "stock_fd": 6350.76
+        },
+        {
+          "elapsed_day": 331,
+          "calendar_day": 181,
+          "stock_fd": 5185.71
+        },
+        {
+          "elapsed_day": 361,
+          "calendar_day": 211,
+          "stock_fd": 4032.62
+        },
+        {
+          "elapsed_day": 391,
+          "calendar_day": 241,
+          "stock_fd": 18087.14
+        },
+        {
+          "elapsed_day": 421,
+          "calendar_day": 271,
+          "stock_fd": 16836.68
+        },
+        {
+          "elapsed_day": 451,
+          "calendar_day": 301,
+          "stock_fd": 15601.54
+        },
+        {
+          "elapsed_day": 481,
+          "calendar_day": 331,
+          "stock_fd": 14379.07
+        },
+        {
+          "elapsed_day": 511,
+          "calendar_day": 361,
+          "stock_fd": 13031.61
+        },
+        {
+          "elapsed_day": 541,
+          "calendar_day": 26,
+          "stock_fd": 11682.77
+        },
+        {
+          "elapsed_day": 571,
+          "calendar_day": 56,
+          "stock_fd": 10347.77
+        },
+        {
+          "elapsed_day": 601,
+          "calendar_day": 86,
+          "stock_fd": 9056.62
+        },
+        {
+          "elapsed_day": 631,
+          "calendar_day": 116,
+          "stock_fd": 7782.05
+        },
+        {
+          "elapsed_day": 661,
+          "calendar_day": 146,
+          "stock_fd": 6520.55
+        },
+        {
+          "elapsed_day": 691,
+          "calendar_day": 176,
+          "stock_fd": 5340.2
+        },
+        {
+          "elapsed_day": 721,
+          "calendar_day": 206,
+          "stock_fd": 4185.52
+        },
+        {
+          "elapsed_day": 751,
+          "calendar_day": 236,
+          "stock_fd": 18302.68
+        },
+        {
+          "elapsed_day": 781,
+          "calendar_day": 266,
+          "stock_fd": 17043.78
+        },
+        {
+          "elapsed_day": 811,
+          "calendar_day": 296,
+          "stock_fd": 15806.51
+        },
+        {
+          "elapsed_day": 841,
+          "calendar_day": 326,
+          "stock_fd": 14581.94
+        },
+        {
+          "elapsed_day": 871,
+          "calendar_day": 356,
+          "stock_fd": 13257.77
+        },
+        {
+          "elapsed_day": 901,
+          "calendar_day": 21,
+          "stock_fd": 11906.61
+        },
+        {
+          "elapsed_day": 931,
+          "calendar_day": 51,
+          "stock_fd": 10569.31
+        },
+        {
+          "elapsed_day": 961,
+          "calendar_day": 81,
+          "stock_fd": 9270.33
+        },
+        {
+          "elapsed_day": 991,
+          "calendar_day": 111,
+          "stock_fd": 7993.56
+        },
+        {
+          "elapsed_day": 1021,
+          "calendar_day": 141,
+          "stock_fd": 6729.9
+        },
+        {
+          "elapsed_day": 1051,
+          "calendar_day": 171,
+          "stock_fd": 5533.8
+        },
+        {
+          "elapsed_day": 1081,
+          "calendar_day": 201,
+          "stock_fd": 4377.14
+        },
+        {
+          "elapsed_day": 1111,
+          "calendar_day": 231,
+          "stock_fd": 18518.58
+        },
+        {
+          "elapsed_day": 1141,
+          "calendar_day": 261,
+          "stock_fd": 17251.24
+        },
+        {
+          "elapsed_day": 1171,
+          "calendar_day": 291,
+          "stock_fd": 16011.84
+        },
+        {
+          "elapsed_day": 1201,
+          "calendar_day": 321,
+          "stock_fd": 14785.16
+        },
+        {
+          "elapsed_day": 1231,
+          "calendar_day": 351,
+          "stock_fd": 13484.32
+        },
+        {
+          "elapsed_day": 1261,
+          "calendar_day": 16,
+          "stock_fd": 12130.84
+        },
+        {
+          "elapsed_day": 1291,
+          "calendar_day": 46,
+          "stock_fd": 10791.24
+        },
+        {
+          "elapsed_day": 1321,
+          "calendar_day": 76,
+          "stock_fd": 9484.4
+        },
+        {
+          "elapsed_day": 1351,
+          "calendar_day": 106,
+          "stock_fd": 8205.44
+        },
+        {
+          "elapsed_day": 1381,
+          "calendar_day": 136,
+          "stock_fd": 6939.61
+        },
+        {
+          "elapsed_day": 1411,
+          "calendar_day": 166,
+          "stock_fd": 5727.74
+        },
+        {
+          "elapsed_day": 1441,
+          "calendar_day": 196,
+          "stock_fd": 4569.09
+        },
+        {
+          "elapsed_day": 1471,
+          "calendar_day": 226,
+          "stock_fd": 18734.86
+        },
+        {
+          "elapsed_day": 1501,
+          "calendar_day": 256,
+          "stock_fd": 17459.05
+        },
+        {
+          "elapsed_day": 1531,
+          "calendar_day": 286,
+          "stock_fd": 16217.52
+        },
+        {
+          "elapsed_day": 1561,
+          "calendar_day": 316,
+          "stock_fd": 14988.73
+        },
+        {
+          "elapsed_day": 1591,
+          "calendar_day": 346,
+          "stock_fd": 13711.26
+        },
+        {
+          "elapsed_day": 1621,
+          "calendar_day": 11,
+          "stock_fd": 12355.45
+        },
+        {
+          "elapsed_day": 1651,
+          "calendar_day": 41,
+          "stock_fd": 11013.55
+        },
+        {
+          "elapsed_day": 1681,
+          "calendar_day": 71,
+          "stock_fd": 9698.85
+        },
+        {
+          "elapsed_day": 1711,
+          "calendar_day": 101,
+          "stock_fd": 8417.69
+        },
+        {
+          "elapsed_day": 1741,
+          "calendar_day": 131,
+          "stock_fd": 7149.67
+        },
+        {
+          "elapsed_day": 1771,
+          "calendar_day": 161,
+          "stock_fd": 5922.02
+        },
+        {
+          "elapsed_day": 1801,
+          "calendar_day": 191,
+          "stock_fd": 4761.37
+        },
+        {
+          "elapsed_day": 1825,
+          "calendar_day": 215,
+          "stock_fd": 19211.98
+        }
+      ]
+    },
+    "normal_poor_storage": {
+      "deficit_fd": 5257.27,
+      "shortage_days": 145,
+      "min_stock_fd": 0,
+      "end_stock_fd": 16576.02,
+      "storage_loss_fd": 21463.89,
+      "overflow_fd": 0.0,
+      "trace": [
+        {
+          "elapsed_day": 1,
+          "calendar_day": 216,
+          "stock_fd": 19187.84
+        },
+        {
+          "elapsed_day": 31,
+          "calendar_day": 246,
+          "stock_fd": 17213.15
+        },
+        {
+          "elapsed_day": 61,
+          "calendar_day": 276,
+          "stock_fd": 15363.95
+        },
+        {
+          "elapsed_day": 91,
+          "calendar_day": 306,
+          "stock_fd": 13601.33
+        },
+        {
+          "elapsed_day": 121,
+          "calendar_day": 336,
+          "stock_fd": 11911.0
+        },
+        {
+          "elapsed_day": 151,
+          "calendar_day": 1,
+          "stock_fd": 10160.03
+        },
+        {
+          "elapsed_day": 181,
+          "calendar_day": 31,
+          "stock_fd": 8491.04
+        },
+        {
+          "elapsed_day": 211,
+          "calendar_day": 61,
+          "stock_fd": 6902.42
+        },
+        {
+          "elapsed_day": 241,
+          "calendar_day": 91,
+          "stock_fd": 5418.82
+        },
+        {
+          "elapsed_day": 271,
+          "calendar_day": 121,
+          "stock_fd": 4004.67
+        },
+        {
+          "elapsed_day": 301,
+          "calendar_day": 151,
+          "stock_fd": 2656.73
+        },
+        {
+          "elapsed_day": 331,
+          "calendar_day": 181,
+          "stock_fd": 1452.19
+        },
+        {
+          "elapsed_day": 361,
+          "calendar_day": 211,
+          "stock_fd": 304.05
+        },
+        {
+          "elapsed_day": 391,
+          "calendar_day": 241,
+          "stock_fd": 15146.33
+        },
+        {
+          "elapsed_day": 421,
+          "calendar_day": 271,
+          "stock_fd": 13391.5
+        },
+        {
+          "elapsed_day": 451,
+          "calendar_day": 301,
+          "stock_fd": 11721.21
+        },
+        {
+          "elapsed_day": 481,
+          "calendar_day": 331,
+          "stock_fd": 10129.12
+        },
+        {
+          "elapsed_day": 511,
+          "calendar_day": 361,
+          "stock_fd": 8476.25
+        },
+        {
+          "elapsed_day": 541,
+          "calendar_day": 26,
+          "stock_fd": 6886.09
+        },
+        {
+          "elapsed_day": 571,
+          "calendar_day": 56,
+          "stock_fd": 5370.37
+        },
+        {
+          "elapsed_day": 601,
+          "calendar_day": 86,
+          "stock_fd": 3955.27
+        },
+        {
+          "elapsed_day": 631,
+          "calendar_day": 116,
+          "stock_fd": 2609.64
+        },
+        {
+          "elapsed_day": 661,
+          "calendar_day": 146,
+          "stock_fd": 1327.01
+        },
+        {
+          "elapsed_day": 691,
+          "calendar_day": 176,
+          "stock_fd": 171.61
+        },
+        {
+          "elapsed_day": 721,
+          "calendar_day": 206,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 751,
+          "calendar_day": 236,
+          "stock_fd": 15267.38
+        },
+        {
+          "elapsed_day": 781,
+          "calendar_day": 266,
+          "stock_fd": 13500.85
+        },
+        {
+          "elapsed_day": 811,
+          "calendar_day": 296,
+          "stock_fd": 11825.44
+        },
+        {
+          "elapsed_day": 841,
+          "calendar_day": 326,
+          "stock_fd": 10228.47
+        },
+        {
+          "elapsed_day": 871,
+          "calendar_day": 356,
+          "stock_fd": 8595.57
+        },
+        {
+          "elapsed_day": 901,
+          "calendar_day": 21,
+          "stock_fd": 6999.82
+        },
+        {
+          "elapsed_day": 931,
+          "calendar_day": 51,
+          "stock_fd": 5478.78
+        },
+        {
+          "elapsed_day": 961,
+          "calendar_day": 81,
+          "stock_fd": 4053.21
+        },
+        {
+          "elapsed_day": 991,
+          "calendar_day": 111,
+          "stock_fd": 2702.99
+        },
+        {
+          "elapsed_day": 1021,
+          "calendar_day": 141,
+          "stock_fd": 1415.99
+        },
+        {
+          "elapsed_day": 1051,
+          "calendar_day": 171,
+          "stock_fd": 243.2
+        },
+        {
+          "elapsed_day": 1081,
+          "calendar_day": 201,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1111,
+          "calendar_day": 231,
+          "stock_fd": 15574.99
+        },
+        {
+          "elapsed_day": 1141,
+          "calendar_day": 261,
+          "stock_fd": 13787.97
+        },
+        {
+          "elapsed_day": 1171,
+          "calendar_day": 291,
+          "stock_fd": 12099.13
+        },
+        {
+          "elapsed_day": 1201,
+          "calendar_day": 321,
+          "stock_fd": 10489.35
+        },
+        {
+          "elapsed_day": 1231,
+          "calendar_day": 351,
+          "stock_fd": 8869.05
+        },
+        {
+          "elapsed_day": 1261,
+          "calendar_day": 16,
+          "stock_fd": 7260.5
+        },
+        {
+          "elapsed_day": 1291,
+          "calendar_day": 46,
+          "stock_fd": 5727.25
+        },
+        {
+          "elapsed_day": 1321,
+          "calendar_day": 76,
+          "stock_fd": 4284.6
+        },
+        {
+          "elapsed_day": 1351,
+          "calendar_day": 106,
+          "stock_fd": 2923.56
+        },
+        {
+          "elapsed_day": 1381,
+          "calendar_day": 136,
+          "stock_fd": 1626.23
+        },
+        {
+          "elapsed_day": 1411,
+          "calendar_day": 166,
+          "stock_fd": 430.27
+        },
+        {
+          "elapsed_day": 1441,
+          "calendar_day": 196,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1471,
+          "calendar_day": 226,
+          "stock_fd": 15885.07
+        },
+        {
+          "elapsed_day": 1501,
+          "calendar_day": 256,
+          "stock_fd": 14077.4
+        },
+        {
+          "elapsed_day": 1531,
+          "calendar_day": 286,
+          "stock_fd": 12375.01
+        },
+        {
+          "elapsed_day": 1561,
+          "calendar_day": 316,
+          "stock_fd": 10752.31
+        },
+        {
+          "elapsed_day": 1591,
+          "calendar_day": 346,
+          "stock_fd": 9144.72
+        },
+        {
+          "elapsed_day": 1621,
+          "calendar_day": 11,
+          "stock_fd": 7523.26
+        },
+        {
+          "elapsed_day": 1651,
+          "calendar_day": 41,
+          "stock_fd": 5977.71
+        },
+        {
+          "elapsed_day": 1681,
+          "calendar_day": 71,
+          "stock_fd": 4517.86
+        },
+        {
+          "elapsed_day": 1711,
+          "calendar_day": 101,
+          "stock_fd": 3145.89
+        },
+        {
+          "elapsed_day": 1741,
+          "calendar_day": 131,
+          "stock_fd": 1838.15
+        },
+        {
+          "elapsed_day": 1771,
+          "calendar_day": 161,
+          "stock_fd": 618.83
+        },
+        {
+          "elapsed_day": 1801,
+          "calendar_day": 191,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1825,
+          "calendar_day": 215,
+          "stock_fd": 16576.02
+        }
+      ]
+    },
+    "one_bad_harvest_60d_reserve": {
+      "deficit_fd": 3072.41,
+      "shortage_days": 82,
+      "min_stock_fd": 0,
+      "end_stock_fd": 19211.98,
+      "storage_loss_fd": 5876.1,
+      "overflow_fd": 1644.76,
+      "trace": [
+        {
+          "elapsed_day": 1,
+          "calendar_day": 216,
+          "stock_fd": 19211.98
+        },
+        {
+          "elapsed_day": 31,
+          "calendar_day": 246,
+          "stock_fd": 17918.75
+        },
+        {
+          "elapsed_day": 61,
+          "calendar_day": 276,
+          "stock_fd": 16672.5
+        },
+        {
+          "elapsed_day": 91,
+          "calendar_day": 306,
+          "stock_fd": 15439.04
+        },
+        {
+          "elapsed_day": 121,
+          "calendar_day": 336,
+          "stock_fd": 14208.0
+        },
+        {
+          "elapsed_day": 151,
+          "calendar_day": 1,
+          "stock_fd": 12847.1
+        },
+        {
+          "elapsed_day": 181,
+          "calendar_day": 31,
+          "stock_fd": 11500.15
+        },
+        {
+          "elapsed_day": 211,
+          "calendar_day": 61,
+          "stock_fd": 10169.27
+        },
+        {
+          "elapsed_day": 241,
+          "calendar_day": 91,
+          "stock_fd": 8883.28
+        },
+        {
+          "elapsed_day": 271,
+          "calendar_day": 121,
+          "stock_fd": 7610.49
+        },
+        {
+          "elapsed_day": 301,
+          "calendar_day": 151,
+          "stock_fd": 6350.76
+        },
+        {
+          "elapsed_day": 331,
+          "calendar_day": 181,
+          "stock_fd": 5185.71
+        },
+        {
+          "elapsed_day": 361,
+          "calendar_day": 211,
+          "stock_fd": 4032.62
+        },
+        {
+          "elapsed_day": 391,
+          "calendar_day": 241,
+          "stock_fd": 18050.67
+        },
+        {
+          "elapsed_day": 421,
+          "calendar_day": 271,
+          "stock_fd": 16750.66
+        },
+        {
+          "elapsed_day": 451,
+          "calendar_day": 301,
+          "stock_fd": 15465.92
+        },
+        {
+          "elapsed_day": 481,
+          "calendar_day": 331,
+          "stock_fd": 14194.35
+        },
+        {
+          "elapsed_day": 511,
+          "calendar_day": 361,
+          "stock_fd": 12829.25
+        },
+        {
+          "elapsed_day": 541,
+          "calendar_day": 26,
+          "stock_fd": 11466.37
+        },
+        {
+          "elapsed_day": 571,
+          "calendar_day": 56,
+          "stock_fd": 10117.47
+        },
+        {
+          "elapsed_day": 601,
+          "calendar_day": 86,
+          "stock_fd": 8805.78
+        },
+        {
+          "elapsed_day": 631,
+          "calendar_day": 116,
+          "stock_fd": 7510.12
+        },
+        {
+          "elapsed_day": 661,
+          "calendar_day": 146,
+          "stock_fd": 6227.77
+        },
+        {
+          "elapsed_day": 691,
+          "calendar_day": 176,
+          "stock_fd": 5011.42
+        },
+        {
+          "elapsed_day": 721,
+          "calendar_day": 206,
+          "stock_fd": 3818.06
+        },
+        {
+          "elapsed_day": 751,
+          "calendar_day": 236,
+          "stock_fd": 10528.97
+        },
+        {
+          "elapsed_day": 781,
+          "calendar_day": 266,
+          "stock_fd": 9349.82
+        },
+        {
+          "elapsed_day": 811,
+          "calendar_day": 296,
+          "stock_fd": 8191.49
+        },
+        {
+          "elapsed_day": 841,
+          "calendar_day": 326,
+          "stock_fd": 7045.04
+        },
+        {
+          "elapsed_day": 871,
+          "calendar_day": 356,
+          "stock_fd": 5798.2
+        },
+        {
+          "elapsed_day": 901,
+          "calendar_day": 21,
+          "stock_fd": 4523.57
+        },
+        {
+          "elapsed_day": 931,
+          "calendar_day": 51,
+          "stock_fd": 3262.03
+        },
+        {
+          "elapsed_day": 961,
+          "calendar_day": 81,
+          "stock_fd": 2038.01
+        },
+        {
+          "elapsed_day": 991,
+          "calendar_day": 111,
+          "stock_fd": 835.45
+        },
+        {
+          "elapsed_day": 1021,
+          "calendar_day": 141,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1051,
+          "calendar_day": 171,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1081,
+          "calendar_day": 201,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1111,
+          "calendar_day": 231,
+          "stock_fd": 15917.82
+        },
+        {
+          "elapsed_day": 1141,
+          "calendar_day": 261,
+          "stock_fd": 14677.16
+        },
+        {
+          "elapsed_day": 1171,
+          "calendar_day": 291,
+          "stock_fd": 13464.17
+        },
+        {
+          "elapsed_day": 1201,
+          "calendar_day": 321,
+          "stock_fd": 12263.63
+        },
+        {
+          "elapsed_day": 1231,
+          "calendar_day": 351,
+          "stock_fd": 10988.66
+        },
+        {
+          "elapsed_day": 1261,
+          "calendar_day": 16,
+          "stock_fd": 9660.78
+        },
+        {
+          "elapsed_day": 1291,
+          "calendar_day": 46,
+          "stock_fd": 8346.53
+        },
+        {
+          "elapsed_day": 1321,
+          "calendar_day": 76,
+          "stock_fd": 7064.77
+        },
+        {
+          "elapsed_day": 1351,
+          "calendar_day": 106,
+          "stock_fd": 5810.64
+        },
+        {
+          "elapsed_day": 1381,
+          "calendar_day": 136,
+          "stock_fd": 4569.37
+        },
+        {
+          "elapsed_day": 1411,
+          "calendar_day": 166,
+          "stock_fd": 3381.82
+        },
+        {
+          "elapsed_day": 1441,
+          "calendar_day": 196,
+          "stock_fd": 2247.24
+        },
+        {
+          "elapsed_day": 1471,
+          "calendar_day": 226,
+          "stock_fd": 17695.24
+        },
+        {
+          "elapsed_day": 1501,
+          "calendar_day": 256,
+          "stock_fd": 16430.09
+        },
+        {
+          "elapsed_day": 1531,
+          "calendar_day": 286,
+          "stock_fd": 15199.12
+        },
+        {
+          "elapsed_day": 1561,
+          "calendar_day": 316,
+          "stock_fd": 13980.78
+        },
+        {
+          "elapsed_day": 1591,
+          "calendar_day": 346,
+          "stock_fd": 12713.65
+        },
+        {
+          "elapsed_day": 1621,
+          "calendar_day": 11,
+          "stock_fd": 11368.08
+        },
+        {
+          "elapsed_day": 1651,
+          "calendar_day": 41,
+          "stock_fd": 10036.31
+        },
+        {
+          "elapsed_day": 1681,
+          "calendar_day": 71,
+          "stock_fd": 8731.63
+        },
+        {
+          "elapsed_day": 1711,
+          "calendar_day": 101,
+          "stock_fd": 7460.4
+        },
+        {
+          "elapsed_day": 1741,
+          "calendar_day": 131,
+          "stock_fd": 6202.2
+        },
+        {
+          "elapsed_day": 1771,
+          "calendar_day": 161,
+          "stock_fd": 4984.27
+        },
+        {
+          "elapsed_day": 1801,
+          "calendar_day": 191,
+          "stock_fd": 3833.24
+        },
+        {
+          "elapsed_day": 1825,
+          "calendar_day": 215,
+          "stock_fd": 19211.98
+        }
+      ]
+    },
+    "two_bad_harvests_60d_reserve": {
+      "deficit_fd": 7873.88,
+      "shortage_days": 207,
+      "min_stock_fd": 0,
+      "end_stock_fd": 18168.42,
+      "storage_loss_fd": 4968.85,
+      "overflow_fd": 1301.96,
+      "trace": [
+        {
+          "elapsed_day": 1,
+          "calendar_day": 216,
+          "stock_fd": 19211.98
+        },
+        {
+          "elapsed_day": 31,
+          "calendar_day": 246,
+          "stock_fd": 17918.75
+        },
+        {
+          "elapsed_day": 61,
+          "calendar_day": 276,
+          "stock_fd": 16672.5
+        },
+        {
+          "elapsed_day": 91,
+          "calendar_day": 306,
+          "stock_fd": 15439.04
+        },
+        {
+          "elapsed_day": 121,
+          "calendar_day": 336,
+          "stock_fd": 14208.0
+        },
+        {
+          "elapsed_day": 151,
+          "calendar_day": 1,
+          "stock_fd": 12847.1
+        },
+        {
+          "elapsed_day": 181,
+          "calendar_day": 31,
+          "stock_fd": 11500.15
+        },
+        {
+          "elapsed_day": 211,
+          "calendar_day": 61,
+          "stock_fd": 10169.27
+        },
+        {
+          "elapsed_day": 241,
+          "calendar_day": 91,
+          "stock_fd": 8883.28
+        },
+        {
+          "elapsed_day": 271,
+          "calendar_day": 121,
+          "stock_fd": 7610.49
+        },
+        {
+          "elapsed_day": 301,
+          "calendar_day": 151,
+          "stock_fd": 6350.76
+        },
+        {
+          "elapsed_day": 331,
+          "calendar_day": 181,
+          "stock_fd": 5185.71
+        },
+        {
+          "elapsed_day": 361,
+          "calendar_day": 211,
+          "stock_fd": 4032.62
+        },
+        {
+          "elapsed_day": 391,
+          "calendar_day": 241,
+          "stock_fd": 18050.67
+        },
+        {
+          "elapsed_day": 421,
+          "calendar_day": 271,
+          "stock_fd": 16750.66
+        },
+        {
+          "elapsed_day": 451,
+          "calendar_day": 301,
+          "stock_fd": 15465.92
+        },
+        {
+          "elapsed_day": 481,
+          "calendar_day": 331,
+          "stock_fd": 14194.35
+        },
+        {
+          "elapsed_day": 511,
+          "calendar_day": 361,
+          "stock_fd": 12829.25
+        },
+        {
+          "elapsed_day": 541,
+          "calendar_day": 26,
+          "stock_fd": 11466.37
+        },
+        {
+          "elapsed_day": 571,
+          "calendar_day": 56,
+          "stock_fd": 10117.47
+        },
+        {
+          "elapsed_day": 601,
+          "calendar_day": 86,
+          "stock_fd": 8805.78
+        },
+        {
+          "elapsed_day": 631,
+          "calendar_day": 116,
+          "stock_fd": 7510.12
+        },
+        {
+          "elapsed_day": 661,
+          "calendar_day": 146,
+          "stock_fd": 6227.77
+        },
+        {
+          "elapsed_day": 691,
+          "calendar_day": 176,
+          "stock_fd": 5011.42
+        },
+        {
+          "elapsed_day": 721,
+          "calendar_day": 206,
+          "stock_fd": 3818.06
+        },
+        {
+          "elapsed_day": 751,
+          "calendar_day": 236,
+          "stock_fd": 10506.04
+        },
+        {
+          "elapsed_day": 781,
+          "calendar_day": 266,
+          "stock_fd": 9289.39
+        },
+        {
+          "elapsed_day": 811,
+          "calendar_day": 296,
+          "stock_fd": 8092.41
+        },
+        {
+          "elapsed_day": 841,
+          "calendar_day": 326,
+          "stock_fd": 6907.71
+        },
+        {
+          "elapsed_day": 871,
+          "calendar_day": 356,
+          "stock_fd": 5642.64
+        },
+        {
+          "elapsed_day": 901,
+          "calendar_day": 21,
+          "stock_fd": 4357.07
+        },
+        {
+          "elapsed_day": 931,
+          "calendar_day": 51,
+          "stock_fd": 3084.7
+        },
+        {
+          "elapsed_day": 961,
+          "calendar_day": 81,
+          "stock_fd": 1845.66
+        },
+        {
+          "elapsed_day": 991,
+          "calendar_day": 111,
+          "stock_fd": 626.67
+        },
+        {
+          "elapsed_day": 1021,
+          "calendar_day": 141,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1051,
+          "calendar_day": 171,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1081,
+          "calendar_day": 201,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1111,
+          "calendar_day": 231,
+          "stock_fd": 9176.18
+        },
+        {
+          "elapsed_day": 1141,
+          "calendar_day": 261,
+          "stock_fd": 8004.68
+        },
+        {
+          "elapsed_day": 1171,
+          "calendar_day": 291,
+          "stock_fd": 6860.15
+        },
+        {
+          "elapsed_day": 1201,
+          "calendar_day": 321,
+          "stock_fd": 5727.36
+        },
+        {
+          "elapsed_day": 1231,
+          "calendar_day": 351,
+          "stock_fd": 4519.45
+        },
+        {
+          "elapsed_day": 1261,
+          "calendar_day": 16,
+          "stock_fd": 3257.95
+        },
+        {
+          "elapsed_day": 1291,
+          "calendar_day": 46,
+          "stock_fd": 2009.38
+        },
+        {
+          "elapsed_day": 1321,
+          "calendar_day": 76,
+          "stock_fd": 792.65
+        },
+        {
+          "elapsed_day": 1351,
+          "calendar_day": 106,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1381,
+          "calendar_day": 136,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1411,
+          "calendar_day": 166,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1441,
+          "calendar_day": 196,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1471,
+          "calendar_day": 226,
+          "stock_fd": 16129.63
+        },
+        {
+          "elapsed_day": 1501,
+          "calendar_day": 256,
+          "stock_fd": 14880.54
+        },
+        {
+          "elapsed_day": 1531,
+          "calendar_day": 286,
+          "stock_fd": 13665.47
+        },
+        {
+          "elapsed_day": 1561,
+          "calendar_day": 316,
+          "stock_fd": 12462.86
+        },
+        {
+          "elapsed_day": 1591,
+          "calendar_day": 346,
+          "stock_fd": 11211.31
+        },
+        {
+          "elapsed_day": 1621,
+          "calendar_day": 11,
+          "stock_fd": 9881.15
+        },
+        {
+          "elapsed_day": 1651,
+          "calendar_day": 41,
+          "stock_fd": 8564.63
+        },
+        {
+          "elapsed_day": 1681,
+          "calendar_day": 71,
+          "stock_fd": 7275.06
+        },
+        {
+          "elapsed_day": 1711,
+          "calendar_day": 101,
+          "stock_fd": 6018.76
+        },
+        {
+          "elapsed_day": 1741,
+          "calendar_day": 131,
+          "stock_fd": 4775.36
+        },
+        {
+          "elapsed_day": 1771,
+          "calendar_day": 161,
+          "stock_fd": 3572.06
+        },
+        {
+          "elapsed_day": 1801,
+          "calendar_day": 191,
+          "stock_fd": 2435.53
+        },
+        {
+          "elapsed_day": 1825,
+          "calendar_day": 215,
+          "stock_fd": 18168.42
+        }
+      ]
+    },
+    "one_bad_harvest_0d_reserve": {
+      "deficit_fd": 5184.92,
+      "shortage_days": 136,
+      "min_stock_fd": 0,
+      "end_stock_fd": 16596.88,
+      "storage_loss_fd": 4878.65,
+      "overflow_fd": 4753.81,
+      "trace": [
+        {
+          "elapsed_day": 1,
+          "calendar_day": 216,
+          "stock_fd": 16596.88
+        },
+        {
+          "elapsed_day": 31,
+          "calendar_day": 246,
+          "stock_fd": 15330.48
+        },
+        {
+          "elapsed_day": 61,
+          "calendar_day": 276,
+          "stock_fd": 14110.78
+        },
+        {
+          "elapsed_day": 91,
+          "calendar_day": 306,
+          "stock_fd": 12903.61
+        },
+        {
+          "elapsed_day": 121,
+          "calendar_day": 336,
+          "stock_fd": 11698.58
+        },
+        {
+          "elapsed_day": 151,
+          "calendar_day": 1,
+          "stock_fd": 10363.42
+        },
+        {
+          "elapsed_day": 181,
+          "calendar_day": 31,
+          "stock_fd": 9041.96
+        },
+        {
+          "elapsed_day": 211,
+          "calendar_day": 61,
+          "stock_fd": 7736.3
+        },
+        {
+          "elapsed_day": 241,
+          "calendar_day": 91,
+          "stock_fd": 6475.27
+        },
+        {
+          "elapsed_day": 271,
+          "calendar_day": 121,
+          "stock_fd": 5227.18
+        },
+        {
+          "elapsed_day": 301,
+          "calendar_day": 151,
+          "stock_fd": 3991.9
+        },
+        {
+          "elapsed_day": 331,
+          "calendar_day": 181,
+          "stock_fd": 2851.06
+        },
+        {
+          "elapsed_day": 361,
+          "calendar_day": 211,
+          "stock_fd": 1721.92
+        },
+        {
+          "elapsed_day": 391,
+          "calendar_day": 241,
+          "stock_fd": 15458.84
+        },
+        {
+          "elapsed_day": 421,
+          "calendar_day": 271,
+          "stock_fd": 14185.42
+        },
+        {
+          "elapsed_day": 451,
+          "calendar_day": 301,
+          "stock_fd": 12926.99
+        },
+        {
+          "elapsed_day": 481,
+          "calendar_day": 331,
+          "stock_fd": 11681.48
+        },
+        {
+          "elapsed_day": 511,
+          "calendar_day": 361,
+          "stock_fd": 10342.15
+        },
+        {
+          "elapsed_day": 541,
+          "calendar_day": 26,
+          "stock_fd": 9004.79
+        },
+        {
+          "elapsed_day": 571,
+          "calendar_day": 56,
+          "stock_fd": 7681.14
+        },
+        {
+          "elapsed_day": 601,
+          "calendar_day": 86,
+          "stock_fd": 6394.45
+        },
+        {
+          "elapsed_day": 631,
+          "calendar_day": 116,
+          "stock_fd": 5123.54
+        },
+        {
+          "elapsed_day": 661,
+          "calendar_day": 146,
+          "stock_fd": 3865.66
+        },
+        {
+          "elapsed_day": 691,
+          "calendar_day": 176,
+          "stock_fd": 2673.55
+        },
+        {
+          "elapsed_day": 721,
+          "calendar_day": 206,
+          "stock_fd": 1504.18
+        },
+        {
+          "elapsed_day": 751,
+          "calendar_day": 236,
+          "stock_fd": 8238.82
+        },
+        {
+          "elapsed_day": 781,
+          "calendar_day": 266,
+          "stock_fd": 7083.18
+        },
+        {
+          "elapsed_day": 811,
+          "calendar_day": 296,
+          "stock_fd": 5948.1
+        },
+        {
+          "elapsed_day": 841,
+          "calendar_day": 326,
+          "stock_fd": 4824.67
+        },
+        {
+          "elapsed_day": 871,
+          "calendar_day": 356,
+          "stock_fd": 3600.6
+        },
+        {
+          "elapsed_day": 901,
+          "calendar_day": 21,
+          "stock_fd": 2348.53
+        },
+        {
+          "elapsed_day": 931,
+          "calendar_day": 51,
+          "stock_fd": 1109.29
+        },
+        {
+          "elapsed_day": 961,
+          "calendar_day": 81,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 991,
+          "calendar_day": 111,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1021,
+          "calendar_day": 141,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1051,
+          "calendar_day": 171,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1081,
+          "calendar_day": 201,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1111,
+          "calendar_day": 231,
+          "stock_fd": 15917.82
+        },
+        {
+          "elapsed_day": 1141,
+          "calendar_day": 261,
+          "stock_fd": 14677.16
+        },
+        {
+          "elapsed_day": 1171,
+          "calendar_day": 291,
+          "stock_fd": 13464.17
+        },
+        {
+          "elapsed_day": 1201,
+          "calendar_day": 321,
+          "stock_fd": 12263.63
+        },
+        {
+          "elapsed_day": 1231,
+          "calendar_day": 351,
+          "stock_fd": 10988.66
+        },
+        {
+          "elapsed_day": 1261,
+          "calendar_day": 16,
+          "stock_fd": 9660.78
+        },
+        {
+          "elapsed_day": 1291,
+          "calendar_day": 46,
+          "stock_fd": 8346.53
+        },
+        {
+          "elapsed_day": 1321,
+          "calendar_day": 76,
+          "stock_fd": 7064.77
+        },
+        {
+          "elapsed_day": 1351,
+          "calendar_day": 106,
+          "stock_fd": 5810.64
+        },
+        {
+          "elapsed_day": 1381,
+          "calendar_day": 136,
+          "stock_fd": 4569.37
+        },
+        {
+          "elapsed_day": 1411,
+          "calendar_day": 166,
+          "stock_fd": 3381.82
+        },
+        {
+          "elapsed_day": 1441,
+          "calendar_day": 196,
+          "stock_fd": 2247.24
+        },
+        {
+          "elapsed_day": 1471,
+          "calendar_day": 226,
+          "stock_fd": 16129.63
+        },
+        {
+          "elapsed_day": 1501,
+          "calendar_day": 256,
+          "stock_fd": 14880.54
+        },
+        {
+          "elapsed_day": 1531,
+          "calendar_day": 286,
+          "stock_fd": 13665.47
+        },
+        {
+          "elapsed_day": 1561,
+          "calendar_day": 316,
+          "stock_fd": 12462.86
+        },
+        {
+          "elapsed_day": 1591,
+          "calendar_day": 346,
+          "stock_fd": 11211.31
+        },
+        {
+          "elapsed_day": 1621,
+          "calendar_day": 11,
+          "stock_fd": 9881.15
+        },
+        {
+          "elapsed_day": 1651,
+          "calendar_day": 41,
+          "stock_fd": 8564.63
+        },
+        {
+          "elapsed_day": 1681,
+          "calendar_day": 71,
+          "stock_fd": 7275.06
+        },
+        {
+          "elapsed_day": 1711,
+          "calendar_day": 101,
+          "stock_fd": 6018.76
+        },
+        {
+          "elapsed_day": 1741,
+          "calendar_day": 131,
+          "stock_fd": 4775.36
+        },
+        {
+          "elapsed_day": 1771,
+          "calendar_day": 161,
+          "stock_fd": 3572.06
+        },
+        {
+          "elapsed_day": 1801,
+          "calendar_day": 191,
+          "stock_fd": 2435.53
+        },
+        {
+          "elapsed_day": 1825,
+          "calendar_day": 215,
+          "stock_fd": 16596.88
+        }
+      ]
+    },
+    "novice_harvest_bottleneck": {
+      "deficit_fd": 3214.34,
+      "shortage_days": 88,
+      "min_stock_fd": 0,
+      "end_stock_fd": 12994.66,
+      "storage_loss_fd": 4985.04,
+      "overflow_fd": 0.0,
+      "trace": [
+        {
+          "elapsed_day": 1,
+          "calendar_day": 216,
+          "stock_fd": 19211.98
+        },
+        {
+          "elapsed_day": 31,
+          "calendar_day": 246,
+          "stock_fd": 17918.75
+        },
+        {
+          "elapsed_day": 61,
+          "calendar_day": 276,
+          "stock_fd": 16672.5
+        },
+        {
+          "elapsed_day": 91,
+          "calendar_day": 306,
+          "stock_fd": 15439.04
+        },
+        {
+          "elapsed_day": 121,
+          "calendar_day": 336,
+          "stock_fd": 14208.0
+        },
+        {
+          "elapsed_day": 151,
+          "calendar_day": 1,
+          "stock_fd": 12847.1
+        },
+        {
+          "elapsed_day": 181,
+          "calendar_day": 31,
+          "stock_fd": 11500.15
+        },
+        {
+          "elapsed_day": 211,
+          "calendar_day": 61,
+          "stock_fd": 10169.27
+        },
+        {
+          "elapsed_day": 241,
+          "calendar_day": 91,
+          "stock_fd": 8883.28
+        },
+        {
+          "elapsed_day": 271,
+          "calendar_day": 121,
+          "stock_fd": 7610.49
+        },
+        {
+          "elapsed_day": 301,
+          "calendar_day": 151,
+          "stock_fd": 6350.76
+        },
+        {
+          "elapsed_day": 331,
+          "calendar_day": 181,
+          "stock_fd": 5185.71
+        },
+        {
+          "elapsed_day": 361,
+          "calendar_day": 211,
+          "stock_fd": 4032.62
+        },
+        {
+          "elapsed_day": 391,
+          "calendar_day": 241,
+          "stock_fd": 15806.91
+        },
+        {
+          "elapsed_day": 421,
+          "calendar_day": 271,
+          "stock_fd": 14579.85
+        },
+        {
+          "elapsed_day": 451,
+          "calendar_day": 301,
+          "stock_fd": 13367.86
+        },
+        {
+          "elapsed_day": 481,
+          "calendar_day": 331,
+          "stock_fd": 12168.3
+        },
+        {
+          "elapsed_day": 511,
+          "calendar_day": 361,
+          "stock_fd": 10843.52
+        },
+        {
+          "elapsed_day": 541,
+          "calendar_day": 26,
+          "stock_fd": 9517.13
+        },
+        {
+          "elapsed_day": 571,
+          "calendar_day": 56,
+          "stock_fd": 8204.35
+        },
+        {
+          "elapsed_day": 601,
+          "calendar_day": 86,
+          "stock_fd": 6935.19
+        },
+        {
+          "elapsed_day": 631,
+          "calendar_day": 116,
+          "stock_fd": 5682.39
+        },
+        {
+          "elapsed_day": 661,
+          "calendar_day": 146,
+          "stock_fd": 4442.43
+        },
+        {
+          "elapsed_day": 691,
+          "calendar_day": 176,
+          "stock_fd": 3283.4
+        },
+        {
+          "elapsed_day": 721,
+          "calendar_day": 206,
+          "stock_fd": 2149.82
+        },
+        {
+          "elapsed_day": 751,
+          "calendar_day": 236,
+          "stock_fd": 13965.65
+        },
+        {
+          "elapsed_day": 781,
+          "calendar_day": 266,
+          "stock_fd": 12751.25
+        },
+        {
+          "elapsed_day": 811,
+          "calendar_day": 296,
+          "stock_fd": 11558.02
+        },
+        {
+          "elapsed_day": 841,
+          "calendar_day": 326,
+          "stock_fd": 10377.03
+        },
+        {
+          "elapsed_day": 871,
+          "calendar_day": 356,
+          "stock_fd": 9096.01
+        },
+        {
+          "elapsed_day": 901,
+          "calendar_day": 21,
+          "stock_fd": 7787.55
+        },
+        {
+          "elapsed_day": 931,
+          "calendar_day": 51,
+          "stock_fd": 6492.51
+        },
+        {
+          "elapsed_day": 961,
+          "calendar_day": 81,
+          "stock_fd": 5235.35
+        },
+        {
+          "elapsed_day": 991,
+          "calendar_day": 111,
+          "stock_fd": 3999.98
+        },
+        {
+          "elapsed_day": 1021,
+          "calendar_day": 141,
+          "stock_fd": 2777.29
+        },
+        {
+          "elapsed_day": 1051,
+          "calendar_day": 171,
+          "stock_fd": 1621.75
+        },
+        {
+          "elapsed_day": 1081,
+          "calendar_day": 201,
+          "stock_fd": 505.22
+        },
+        {
+          "elapsed_day": 1111,
+          "calendar_day": 231,
+          "stock_fd": 12360.18
+        },
+        {
+          "elapsed_day": 1141,
+          "calendar_day": 261,
+          "stock_fd": 11156.01
+        },
+        {
+          "elapsed_day": 1171,
+          "calendar_day": 291,
+          "stock_fd": 9979.15
+        },
+        {
+          "elapsed_day": 1201,
+          "calendar_day": 321,
+          "stock_fd": 8814.36
+        },
+        {
+          "elapsed_day": 1231,
+          "calendar_day": 351,
+          "stock_fd": 7574.78
+        },
+        {
+          "elapsed_day": 1261,
+          "calendar_day": 16,
+          "stock_fd": 6281.93
+        },
+        {
+          "elapsed_day": 1291,
+          "calendar_day": 46,
+          "stock_fd": 5002.34
+        },
+        {
+          "elapsed_day": 1321,
+          "calendar_day": 76,
+          "stock_fd": 3754.89
+        },
+        {
+          "elapsed_day": 1351,
+          "calendar_day": 106,
+          "stock_fd": 2534.72
+        },
+        {
+          "elapsed_day": 1381,
+          "calendar_day": 136,
+          "stock_fd": 1327.06
+        },
+        {
+          "elapsed_day": 1411,
+          "calendar_day": 166,
+          "stock_fd": 172.78
+        },
+        {
+          "elapsed_day": 1441,
+          "calendar_day": 196,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1471,
+          "calendar_day": 226,
+          "stock_fd": 12541.0
+        },
+        {
+          "elapsed_day": 1501,
+          "calendar_day": 256,
+          "stock_fd": 11328.74
+        },
+        {
+          "elapsed_day": 1531,
+          "calendar_day": 286,
+          "stock_fd": 10150.1
+        },
+        {
+          "elapsed_day": 1561,
+          "calendar_day": 316,
+          "stock_fd": 8983.56
+        },
+        {
+          "elapsed_day": 1591,
+          "calendar_day": 346,
+          "stock_fd": 7767.71
+        },
+        {
+          "elapsed_day": 1621,
+          "calendar_day": 11,
+          "stock_fd": 6472.87
+        },
+        {
+          "elapsed_day": 1651,
+          "calendar_day": 41,
+          "stock_fd": 5191.33
+        },
+        {
+          "elapsed_day": 1681,
+          "calendar_day": 71,
+          "stock_fd": 3936.36
+        },
+        {
+          "elapsed_day": 1711,
+          "calendar_day": 101,
+          "stock_fd": 2714.32
+        },
+        {
+          "elapsed_day": 1741,
+          "calendar_day": 131,
+          "stock_fd": 1504.82
+        },
+        {
+          "elapsed_day": 1771,
+          "calendar_day": 161,
+          "stock_fd": 335.08
+        },
+        {
+          "elapsed_day": 1801,
+          "calendar_day": 191,
+          "stock_fd": 0
+        },
+        {
+          "elapsed_day": 1825,
+          "calendar_day": 215,
+          "stock_fd": 12994.66
+        }
+      ]
+    }
+  },
+  "monte_carlo": [
+    {
+      "retention_180d": 0.75,
+      "reserve_days": 0,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 1.0,
+      "mean_deficit_fd": 10736.3
+    },
+    {
+      "retention_180d": 0.75,
+      "reserve_days": 30,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 1.0,
+      "mean_deficit_fd": 8806.55
+    },
+    {
+      "retention_180d": 0.75,
+      "reserve_days": 60,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 0.998,
+      "mean_deficit_fd": 7515.24
+    },
+    {
+      "retention_180d": 0.75,
+      "reserve_days": 90,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 0.989,
+      "mean_deficit_fd": 6979.81
+    },
+    {
+      "retention_180d": 0.94,
+      "reserve_days": 0,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 0.638,
+      "mean_deficit_fd": 1786.13
+    },
+    {
+      "retention_180d": 0.94,
+      "reserve_days": 30,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 0.491,
+      "mean_deficit_fd": 1190.78
+    },
+    {
+      "retention_180d": 0.94,
+      "reserve_days": 60,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 0.354,
+      "mean_deficit_fd": 770.52
+    },
+    {
+      "retention_180d": 0.94,
+      "reserve_days": 90,
+      "paths": 1000,
+      "years_per_path": 5,
+      "fraction_with_shortage": 0.252,
+      "mean_deficit_fd": 487.08
+    }
+  ],
+  "iron": {
+    "recovered_iron_kg": 1.8,
+    "bar_kg": 1.4400000000000002,
+    "finished_metal_kg": 1.2960000000000003,
+    "dry_wood_kg": 80.0
+  },
+  "axe_break_even_wood_kg": 816.6666666666665,
+  "nitrogen_budget_kg_year": {
+    "cereal_exports": 306.0,
+    "pulse_net_input": 70.0,
+    "fallow_input": 96,
+    "manure_transfer": 80,
+    "deposition": 54.0
+  },
+  "pottery_batch": {
+    "single_person_ap_for_12_pots": 48,
+    "shared_batch_ap_for_12_pots": 10.8,
+    "single_dry_wood_kg": 144,
+    "shared_dry_wood_kg": 24
+  }
+}

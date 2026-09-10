@@ -9,7 +9,8 @@ import {
   type Item,
 } from './types';
 import { RECIPES } from './recipes';
-export const RULES_VERSION = 'mvp-1.7.0';
+import { initEcology } from '../ecology/world';
+export const RULES_VERSION = 'eco-2.0.0';
 export const SUPPORTED_REPLAY_VERSIONS = [
   'mvp-1.0.0',
   'mvp-1.1.0',
@@ -18,6 +19,7 @@ export const SUPPORTED_REPLAY_VERSIONS = [
   'mvp-1.4.0',
   'mvp-1.5.0',
   'mvp-1.6.0',
+  'mvp-1.7.0',
   RULES_VERSION,
 ];
 export const SHOUT_AP = 2;
@@ -92,7 +94,7 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
   const size = config.size;
   const w: World = {
     version: 1,
-    rulesVersion: RULES_VERSION,
+    rulesVersion: config.worldModel === 'ecology' ? RULES_VERSION : 'mvp-1.7.0',
     id: id ?? `world-${config.seed}-${Date.now()}`,
     config,
     tick: 1,
@@ -175,13 +177,17 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
   for (let i = 0; i < config.population; i++) {
     const center = centers[i % 4];
     const x =
-      config.spawn === 'uniform'
-        ? Math.floor(rand(w) * size)
-        : Math.max(0, Math.min(size - 1, center[0] + Math.floor(rand(w) * 7) - 3));
+      config.spawn === 'compact'
+        ? c - 1 + (i % 2)
+        : config.spawn === 'uniform'
+          ? Math.floor(rand(w) * size)
+          : Math.max(0, Math.min(size - 1, center[0] + Math.floor(rand(w) * 7) - 3));
     const y =
-      config.spawn === 'uniform'
-        ? Math.floor(rand(w) * size)
-        : Math.max(0, Math.min(size - 1, center[1] + Math.floor(rand(w) * 7) - 3));
+      config.spawn === 'compact'
+        ? c - 1 + (Math.floor(i / 2) % 2)
+        : config.spawn === 'uniform'
+          ? Math.floor(rand(w) * size)
+          : Math.max(0, Math.min(size - 1, center[1] + Math.floor(rand(w) * 7) - 3));
     const t = tileAt(w, x, y);
     t.terrain = 'plain';
     t.resources.food = config.plainFoodCapacity;
@@ -200,8 +206,10 @@ export function createWorld(overrides: Partial<Config> = {}, id?: string): World
   w.agents.forEach((a, i) => (a.sex = sexes[i] as 'F' | 'M'));
   const prophet = w.agents[0];
   prophet.role = 'prophet';
+  prophet.personality[2] = 0.85;
   prophet.recipes = RECIPES.map((recipe) => recipe.id);
   w.cursor.ids = w.agents.map((a) => a.id);
+  if (config.worldModel === 'ecology') initEcology(w);
   return w;
 }
 export function hashWorld(w: World) {
@@ -213,3 +221,6 @@ export function hashWorld(w: World) {
   }
   return (h >>> 0).toString(16).padStart(8, '0');
 }
+
+export const canRunWorld = (w: World) =>
+  w.rulesVersion === RULES_VERSION || (!w.ecology && w.rulesVersion === 'mvp-1.7.0');

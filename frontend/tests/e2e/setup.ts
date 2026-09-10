@@ -11,6 +11,8 @@ export default async function setup() {
       'node_modules/tsx/dist/cli.mjs',
       'scripts/simulate.ts',
       '--overwrite',
+      '--storage',
+      'files',
       '--mode',
       'scripted',
       '--population',

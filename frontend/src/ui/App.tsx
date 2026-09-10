@@ -1,3 +1,10 @@
+import ContextTrace from './ContextTrace';
+import EcoDashboard from './EcoDashboard';
+import StatisticsPage from './StatisticsPage';
+import DialoguePage from './DialoguePage';
+import ExperiencesPage from './ExperiencesPage';
+import InscriptionsPage from './InscriptionsPage';
+import { useChronicle } from './useChronicle';
 import { useEffect, useRef, useState } from 'react';
 import {
   AreaChart,
@@ -17,7 +24,7 @@ import { foodSummary } from '../sim/food';
 import { metrics } from '../sim/engine';
 import { lonelinessCapacity } from '../sim/social';
 import type { FoodBatch } from '../sim/types';
-import { eventNames, matchesEvent } from '../runtime/event-search';
+import { eventNames } from '../runtime/event-search';
 const names: Record<string, string> = {
   food: '食物',
   wood: '木材',
@@ -124,28 +131,52 @@ export default function App() {
     [status, setStatus] = useState('正在读取本地记录…'),
     [error, setError] = useState('');
   const [model, setModel] = useState('连接中'),
+    [contextWindow, setContextWindow] = useState<number>(),
     [selected, setSelected] = useState<[number, number] | null>(null),
     [focus, setFocus] = useState<[number, number]>(),
-    [agentId, setAgentId] = useState<number>(),
+    [agentId, setAgentId] = useState<number | undefined>(
+      () => Number(new URLSearchParams(location.search).get('agent')) || undefined,
+    ),
     [tab, setTab] = useState('居民'),
     [layer, setLayer] = useState('terrain');
-  const [events, setEvents] = useState<WorldEvent[]>([]),
-    [eventType, setEventType] = useState(''),
+  const [eventType, setEventType] = useState(''),
     [query, setQuery] = useState(''),
     [settings, setSettings] = useState(false),
-    [config, setConfig] = useState<Config>({ ...DEFAULT_CONFIG }),
-    [decision, setDecision] = useState<DecisionRecord>(),
-    [statsOpen, setStatsOpen] = useState(false);
-  const [page, setPage] = useState<'world' | 'config'>('world');
+    [config, setConfig] = useState<Config>({
+      ...DEFAULT_CONFIG,
+      worldModel: 'ecology',
+      controller: 'hybrid',
+    }),
+    [decision, setDecision] = useState<DecisionRecord>();
+  const [page, setPage] = useState<
+    'world' | 'config' | 'statistics' | 'experiences' | 'dialogue' | 'inscriptions'
+  >(() => {
+    const value = new URLSearchParams(location.search).get('page');
+    return value === 'config' ||
+      value === 'statistics' ||
+      value === 'experiences' ||
+      value === 'dialogue' ||
+      value === 'inscriptions'
+      ? value
+      : 'world';
+  });
   const [budgetOpen, setBudgetOpen] = useState(false);
-  const [replaySeq, setReplaySeq] = useState(0),
-    [eventPage, setEventPage] = useState(120);
-  const [eventsLoading, setEventsLoading] = useState(false),
-    [eventsError, setEventsError] = useState(''),
-    [hasMoreEvents, setHasMoreEvents] = useState(false);
+  const [replaySeq, setReplaySeq] = useState(0);
+  const [replayTarget, setReplayTarget] = useState<number>();
+  const [serverReplay, setServerReplay] = useState(false);
   const [externalName, setExternalName] = useState<string | undefined>(
     () => new URLSearchParams(location.search).get('experiment') ?? undefined,
   );
+  const { events, eventsLoading, eventsError, hasMoreEvents, loadMoreEvents, refreshEvents } =
+    useChronicle(world, history?.seq, externalName, query, eventType, page === 'world');
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (page === 'world') url.searchParams.delete('page');
+    else url.searchParams.set('page', page);
+    if (page === 'experiences' && agentId) url.searchParams.set('agent', String(agentId));
+    else url.searchParams.delete('agent');
+    window.history.replaceState(null, '', url);
+  }, [page, agentId]);
   const external = useRef(externalName);
   const [control, setControl] = useState<ExperimentControl>();
   const [controlBusy, setControlBusy] = useState(false);
@@ -165,6 +196,8 @@ export default function App() {
     }[]
   >([]);
   const selectSource = (name?: string, restore = true) => {
+    setReplayTarget(undefined);
+    setServerReplay(false);
     external.current = name;
     controlRevision.current++;
     setControl(undefined);
@@ -180,7 +213,6 @@ export default function App() {
     setDecision(undefined);
     if (!name) {
       setWorld(undefined);
-      setEvents([]);
       if (restore) worker.current?.postMessage({ type: 'restore' });
     }
   };
@@ -212,7 +244,10 @@ export default function App() {
   };
   const startExperiment = async () => {
     if (controlBusy) return;
-    const parsed = ConfigSchema.safeParse(config);
+    const parsed = ConfigSchema.safeParse({
+      ...config,
+      contextWindow: config.contextWindow ?? contextWindow ?? 65536,
+    });
     if (!parsed.success) {
       setError(
         parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('；'),
@@ -229,7 +264,6 @@ export default function App() {
       });
       selectSource(data.name);
       setWorld(undefined);
-      setEvents([]);
       setControl(data.control);
       setSettings(false);
       setPage('world');
@@ -265,7 +299,10 @@ export default function App() {
     w.postMessage({ type: 'restore' });
     fetch('/api/config')
       .then((r) => r.json())
-      .then((c) => setModel(c.configured ? c.model : '密钥未配置'))
+      .then((c) => {
+        setModel(c.configured ? c.model : '密钥未配置');
+        setContextWindow(c.contextWindow);
+      })
       .catch(() => setModel('后端未连接'));
     return () => {
       w.terminate();
@@ -273,76 +310,20 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    setEventPage(120);
-  }, [query, eventType, externalName, world?.id, history?.seq]);
-  useEffect(() => {
-    if (!world) return;
-    let active = true;
-    const controller = new AbortController();
-    setEventsLoading(true);
-    setEventsError('');
-    const timer = setTimeout(async () => {
-      try {
-        const through = history?.seq ?? world.seq;
-        let rows: WorldEvent[], hasMore: boolean;
-        if (externalName) {
-          const params = new URLSearchParams({
-            q: query,
-            event_type: eventType,
-            limit: String(eventPage),
-            through: String(through),
-          });
-          const res = await fetch(
-            `/api/experiments/${encodeURIComponent(externalName)}/events?${params}`,
-            { signal: controller.signal },
-          );
-          if (!res.ok) throw new Error('无法检索实验事件');
-          const data = await res.json();
-          rows = data.events;
-          hasMore = data.hasMore;
-        } else {
-          const found = await db.events
-            .where('[runId+seq]')
-            .between([world.id, 0], [world.id, through], true, true)
-            .reverse()
-            .filter((e) => matchesEvent(e, query, eventType))
-            .limit(eventPage + 1)
-            .toArray();
-          rows = found.slice(0, eventPage);
-          hasMore = found.length > eventPage;
-        }
-        if (active) {
-          setEvents(rows);
-          setHasMoreEvents(hasMore);
-        }
-      } catch (e) {
-        if (active) {
-          setEvents([]);
-          setHasMoreEvents(false);
-          setEventsError(e instanceof Error ? e.message : String(e));
-        }
-      } finally {
-        if (active) setEventsLoading(false);
-      }
-    }, 150);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [world?.id, world?.seq, history?.seq, eventPage, externalName, query, eventType]);
-  useEffect(() => {
     if (!externalName) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       const revision = controlRevision.current;
       try {
-        const res = await fetch(`/api/experiments/${encodeURIComponent(externalName)}/snapshot`);
+        const res = await fetch(
+          `/api/experiments/${encodeURIComponent(externalName)}/snapshot?include_events=false`,
+        );
         if (!res.ok) throw new Error('无法读取该实验');
         const data = await res.json();
         if (active) {
           setWorld(data.world);
+          setServerReplay(data.storage === 'mysql-delta-v1');
           if (revision === controlRevision.current) {
             const info: ExperimentControl = data.control;
             setControl(info);
@@ -371,6 +352,30 @@ export default function App() {
         .then(setArchives)
         .catch(() => setError('无法读取实验档案'));
   }, [archiveOpen]);
+  useEffect(() => {
+    if (!externalName || replayTarget === undefined) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `/api/experiments/${encodeURIComponent(externalName)}/replay?seq=${replayTarget}`,
+          { signal: controller.signal },
+        );
+        if (!r.ok) throw Error('历史回放读取失败');
+        const data = await r.json();
+        if (!controller.signal.aborted) {
+          setHistory(data.world);
+          setReplaySeq(data.world.seq);
+        }
+      } catch (e) {
+        if (!controller.signal.aborted) setError(String(e));
+      }
+    }, 180);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [externalName, replayTarget]);
   const displayed = history ?? world;
   const currentMetrics = displayed ? metrics(displayed) : undefined;
   const living = displayed?.agents.filter((a) => !a.death) ?? [];
@@ -385,7 +390,7 @@ export default function App() {
     setFocus([a.x, a.y]);
     setTab('居民');
   };
-  const inspect = async (e: WorldEvent) => {
+  const inspect = async (e: Pick<WorldEvent, 'decisionId' | 'position' | 'actorId'>) => {
     if (e.position) {
       setSelected(e.position);
       setFocus(e.position);
@@ -393,10 +398,11 @@ export default function App() {
     if (e.actorId) setAgentId(e.actorId);
     const r = externalName
       ? await fetch(
-          `/api/experiments/${encodeURIComponent(externalName)}/decision?id=${encodeURIComponent(e.decisionId)}`,
+          `/api/experiments/${encodeURIComponent(externalName)}/decision?id=${encodeURIComponent(e.decisionId.replace(/:complete$/, ''))}`,
         ).then((r) => (r.ok ? r.json() : undefined))
-      : await db.decisions.get(e.decisionId);
+      : await db.decisions.get(e.decisionId.replace(/:complete$/, ''));
     setDecision(r);
+    return !!r;
   };
   return (
     <div className="app-shell">
@@ -411,7 +417,8 @@ export default function App() {
           </div>
         </div>
         <div className="header-center">
-          <span className="live-dot" /> 自主演化实验 <span className="divider">/</span> MVP 01
+          <span className="live-dot" /> 自主演化实验 <span className="divider">/</span>{' '}
+          {displayed?.ecology ? 'ECO 02' : 'MVP 01'}
         </div>
         <div className="header-actions">
           <nav className="page-nav" aria-label="页面导航">
@@ -426,6 +433,30 @@ export default function App() {
               onClick={() => setPage('config')}
             >
               配置
+            </button>
+            <button
+              aria-current={page === 'statistics' ? 'page' : undefined}
+              onClick={() => setPage('statistics')}
+            >
+              统计数据
+            </button>
+            <button
+              aria-current={page === 'experiences' ? 'page' : undefined}
+              onClick={() => setPage('experiences')}
+            >
+              Agent 经历
+            </button>
+            <button
+              aria-current={page === 'dialogue' ? 'page' : undefined}
+              onClick={() => setPage('dialogue')}
+            >
+              对话分析
+            </button>
+            <button
+              aria-current={page === 'inscriptions' ? 'page' : undefined}
+              onClick={() => setPage('inscriptions')}
+            >
+              铭文
             </button>
           </nav>
           <button
@@ -448,11 +479,47 @@ export default function App() {
         </div>
       </header>
       <main>
-        {page === 'config' ? (
+        {error && (
+          <div className="alert" role="alert">
+            {error}
+            <button onClick={() => setError('')}>关闭</button>
+          </div>
+        )}
+
+        {page === 'inscriptions' ? (
+          <InscriptionsPage world={displayed} historical={!!history} />
+        ) : page === 'dialogue' ? (
+          <DialoguePage
+            world={displayed}
+            historical={!!history}
+            externalName={externalName}
+            onInspect={(decisionId) => inspect({ decisionId })}
+          />
+        ) : page === 'statistics' ? (
+          <StatisticsPage
+            externalName={externalName}
+            world={displayed}
+            historical={!!history}
+            onAgent={(id) => {
+              setAgentId(id);
+              setPage('experiences');
+            }}
+          />
+        ) : page === 'experiences' ? (
+          <ExperiencesPage
+            world={displayed}
+            historical={!!history}
+            externalName={externalName}
+            agentId={agentId}
+            onAgent={setAgentId}
+            onInspect={(decisionId) => inspect({ decisionId })}
+          />
+        ) : page === 'config' ? (
           <WorldConfig
             world={displayed}
             draft={config}
             model={model}
+            contextWindow={contextWindow}
             onCreate={() => setSettings(true)}
           />
         ) : (
@@ -476,12 +543,6 @@ export default function App() {
                 <p>/ {world?.config.days ?? config.days} 天实验周期</p>
               </div>
             </section>
-            {error && (
-              <div className="alert" role="alert">
-                {error}
-                <button onClick={() => setError('')}>关闭</button>
-              </div>
-            )}
             <section className="summary-grid">
               <div className="summary-card">
                 <span>
@@ -502,10 +563,10 @@ export default function App() {
                 </span>
                 <strong>
                   {fmt(currentMetrics?.freshFood ?? currentMetrics?.food ?? 0)}
-                  <small>份</small>
+                  <small>{displayed?.ecology ? 'FD' : '份'}</small>
                 </strong>
                 <p>
-                  新鲜储备与农田收成
+                  {displayed?.ecology ? '储存食物热量（1 FD = 2500 kcal）' : '新鲜储备与农田收成'}
                   {currentMetrics?.spoiledFood !== undefined
                     ? ` · 腐败 ${fmt(currentMetrics.spoiledFood)} 份`
                     : ''}
@@ -526,7 +587,9 @@ export default function App() {
                   已开垦农田 <i>▧</i>
                 </span>
                 <strong>
-                  {displayed?.tiles.filter((t) => t.farm >= 3).length ?? 0}
+                  {displayed?.ecology
+                    ? displayed.tiles.reduce((n, t) => n + t.eco!.fields.length, 0)
+                    : (displayed?.tiles.filter((t) => t.farm >= 3).length ?? 0)}
                   <small>块</small>
                 </strong>
                 <p>
@@ -535,7 +598,11 @@ export default function App() {
                 </p>
               </div>
             </section>
-            <section className="workspace">
+            {displayed?.ecology && <EcoDashboard world={displayed} layer={layer} />}
+            <section
+              className="workspace"
+              style={displayed?.ecology ? { display: 'block' } : undefined}
+            >
               <div className="world-panel">
                 <div className="panel-toolbar">
                   <div className="panel-title">
@@ -557,7 +624,7 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-                {displayed ? (
+                {displayed?.ecology ? null : displayed ? (
                   <Map
                     world={displayed}
                     selected={selected}
@@ -592,7 +659,10 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                <div className="map-footer">
+                <div
+                  className="map-footer"
+                  style={displayed?.ecology ? { display: 'none' } : undefined}
+                >
                   <div className="legend">
                     <span>
                       <i style={{ background: '#40593d' }} />
@@ -696,7 +766,10 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <aside className="inspector">
+              <aside
+                className="inspector"
+                style={displayed?.ecology ? { display: 'none' } : undefined}
+              >
                 <div className="inspector-tabs">
                   {['居民', '地块', '认知'].map((t) => (
                     <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
@@ -1027,17 +1100,27 @@ export default function App() {
                   <button
                     className="text-button"
                     disabled={!world || eventsLoading || !hasMoreEvents}
-                    onClick={() => setEventPage((p) => p + 200)}
+                    onClick={loadMoreEvents}
                   >
                     加载更早记录
                   </button>
-                  <span>点击事件，查看当时的决策上下文</span>
+                  <button
+                    className="text-button"
+                    disabled={!world || eventsLoading}
+                    onClick={refreshEvents}
+                  >
+                    刷新纪事
+                  </button>
+                  <span role="status">
+                    {eventsError ||
+                      (eventsLoading ? '正在检索历史…' : '点击事件，查看当时的决策上下文')}
+                  </span>
                 </div>
               </div>
               <div className="chart-panel">
                 <div className="panel-toolbar">
                   <div className="panel-title">生命的轨迹</div>
-                  <button className="text-button" onClick={() => setStatsOpen(true)}>
+                  <button className="text-button" onClick={() => setPage('statistics')}>
                     统计详情 ↗
                   </button>
                 </div>
@@ -1117,16 +1200,21 @@ export default function App() {
                 type="range"
                 min="0"
                 max={world?.seq ?? 0}
-                value={history ? replaySeq : (world?.seq ?? 0)}
-                disabled={running || !world || !!externalName}
+                value={replayTarget ?? (history ? replaySeq : (world?.seq ?? 0))}
+                disabled={!world || (externalName ? !serverReplay : running)}
                 onChange={(e) => {
                   setReplaySeq(Number(e.target.value));
-                  send('replay', { seq: Number(e.target.value) });
+                  if (externalName) setReplayTarget(Number(e.target.value));
+                  else send('replay', { seq: Number(e.target.value) });
                 }}
               />
               <button
-                disabled={!history && !externalName}
-                onClick={() => (externalName ? selectSource() : send('current'))}
+                disabled={!history && replayTarget === undefined}
+                onClick={() => {
+                  setReplayTarget(undefined);
+                  setHistory(undefined);
+                  if (!externalName) send('current');
+                }}
               >
                 返回当前
               </button>
@@ -1150,16 +1238,25 @@ export default function App() {
                 hidden
                 ref={file}
                 type="file"
-                accept=".json"
+                accept=".json,.gz"
                 onChange={async (e) => {
                   try {
                     const f = e.target.files?.[0];
                     if (f) {
-                      selectSource(undefined, false);
-                      send('import', { bundle: JSON.parse(await f.text()) });
+                      const head = await f.slice(0, 256).text();
+                      if (f.name.endsWith('.gz') || head.includes('agent-world-delta-v1')) {
+                        setStatus('正在校验并导入数据库档案…');
+                        const r = await fetch('/api/storage-import', { method: 'POST', body: f });
+                        if (!r.ok) throw Error('数据库档案校验失败');
+                        const data = await r.json();
+                        selectSource(data.name);
+                      } else {
+                        selectSource(undefined, false);
+                        send('import', { bundle: JSON.parse(await f.text()) });
+                      }
                     }
-                  } catch {
-                    setError('无法解析导入文件');
+                  } catch (error) {
+                    setError(error instanceof Error ? error.message : '无法解析导入文件');
                   }
                   e.target.value = '';
                 }}
@@ -1322,6 +1419,13 @@ export default function App() {
                   ['population', '初始居民'],
                   ['days', '实验天数'],
                   ['dailyAP', '每日行动点'],
+                  ...(config.worldModel === 'ecology'
+                    ? ([
+                        ['regions', '区域数量'],
+                        ['llmDailyTokens', '每人每日 Token 准入阈值'],
+                        ['contextWindow', '下次实验上下文窗口（tokens）'],
+                      ] as [keyof Config, string][])
+                    : []),
                   ['maxCalls', '调用次数上限'],
                   ['maxTokens', 'Token 上限'],
                   ['populationLimit', '人口暂停阈值'],
@@ -1333,18 +1437,128 @@ export default function App() {
                   ['outputPrice', '输出价 / 百万 tokens'],
                   ['cachePrice', '缓存命中价 / 百万 tokens'],
                 ] as [keyof Config, string][]
-              ).map(([k, label]) => (
-                <label key={k}>
-                  {label}
+              )
+                .filter(
+                  ([k]) =>
+                    config.worldModel !== 'ecology' ||
+                    ![
+                      'plainFoodCapacity',
+                      'plainRecoveryDays',
+                      'foodShelfLifeDays',
+                      'spoiledFoodDamage',
+                      'spoiledFoodHungerGain',
+                      'gestation',
+                      'adultAge',
+                    ].includes(k),
+                )
+                .map(([k, label]) => (
+                  <label key={k}>
+                    {label}
+                    <input
+                      type="number"
+                      min={k === 'size' ? 10 : k === 'contextWindow' ? 4000 : undefined}
+                      max={k === 'size' ? 64 : k === 'contextWindow' ? 262144 : undefined}
+                      value={
+                        (config[k] ??
+                          (k === 'contextWindow' ? (contextWindow ?? 65536) : undefined)) as number
+                      }
+                      onChange={(e) => setConfig((c) => ({ ...c, [k]: Number(e.target.value) }))}
+                    />
+                  </label>
+                ))}
+              <label>
+                世界规则
+                <select
+                  value={config.worldModel}
+                  onChange={(e) =>
+                    setConfig({ ...config, worldModel: e.target.value as Config['worldModel'] })
+                  }
+                >
+                  <option value="ecology">生态产业 / 混合 Agent</option>
+                  <option value="legacy">历史简化规则</option>
+                </select>
+              </label>
+              {config.worldModel === 'ecology' && (
+                <label>
+                  野兽与聚居地袭击
                   <input
-                    type="number"
-                    min={k === 'size' ? 10 : undefined}
-                    max={k === 'size' ? 64 : undefined}
-                    value={config[k] as number}
-                    onChange={(e) => setConfig((c) => ({ ...c, [k]: Number(e.target.value) }))}
+                    type="checkbox"
+                    checked={config.wildlifeEnabled !== false}
+                    onChange={(e) => setConfig({ ...config, wildlifeEnabled: e.target.checked })}
                   />
                 </label>
-              ))}
+              )}
+              {config.worldModel === 'ecology' && (
+                <>
+                  <label>
+                    野兽死亡后刷新冷却（天）
+                    <input
+                      type="number"
+                      min={0}
+                      max={365}
+                      step={1}
+                      value={config.beastRespawnDays ?? 10}
+                      onChange={(e) =>
+                        setConfig({ ...config, beastRespawnDays: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <label>
+                    野兽战斗力倍率
+                    <input
+                      type="number"
+                      min={0.1}
+                      max={5}
+                      step={0.1}
+                      value={config.beastPowerMultiplier ?? 1}
+                      onChange={(e) =>
+                        setConfig({ ...config, beastPowerMultiplier: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <p>
+                    同一区域有野兽被击败后，冷却期间不刷新新野兽；到期后按每5天的刷新节奏补充。倍率同时缩放野兽生命、攻击和回血，0.5表示减半。
+                  </p>
+                </>
+              )}
+              <label>
+                生态开局
+                <select
+                  aria-label="生态开局"
+                  value={config.ecoPreset}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      ecoPreset: e.target.value as Config['ecoPreset'],
+                      ...(e.target.value === 'village' ? { spawn: 'compact' as const } : {}),
+                    })
+                  }
+                >
+                  <option value="forager">采集者（先知 + 初始口粮）</option>
+                  <option value="settlement">农业定居（实物种粮 / 畜群 / 仓库）</option>
+                  <option value="village">初始村落（集中居住 / 农田 / 农具 / 储粮）</option>
+                </select>
+              </label>
+              <label>
+                开始年内日
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={config.startDay}
+                  onChange={(e) => setConfig({ ...config, startDay: Number(e.target.value) })}
+                />
+              </label>
+              <label>
+                每人每日模型请求上限
+                <input
+                  type="number"
+                  min="0"
+                  max="3"
+                  value={config.llmDailyCalls}
+                  onChange={(e) => setConfig({ ...config, llmDailyCalls: Number(e.target.value) })}
+                />
+              </label>
               <label>
                 运行模式
                 <select
@@ -1373,24 +1587,42 @@ export default function App() {
               <label>
                 出生分布
                 <select
+                  aria-label="出生分布"
                   value={config.spawn}
+                  disabled={config.worldModel === 'ecology' && config.ecoPreset === 'village'}
                   onChange={(e) =>
                     setConfig((c) => ({ ...c, spawn: e.target.value as Config['spawn'] }))
                   }
                 >
                   <option value="clusters">分区随机</option>
                   <option value="uniform">全图均匀随机</option>
+                  <option value="compact">扎堆出现（同一区域 2×2 四格）</option>
                 </select>
               </label>
             </div>
             <div className="note">
-              按初始人口估计，约{' '}
-              {fmt(
-                config.population *
-                  (config.days * (config.dailyAP ?? DEFAULT_CONFIG.dailyAP) +
-                    Math.floor(config.days / 5)),
+              {config.worldModel === 'ecology' ? (
+                <>
+                  按初始人口计算，模型请求上限约{' '}
+                  {fmt(
+                    Math.min(
+                      config.maxCalls,
+                      config.population * config.days * config.llmDailyCalls,
+                    ),
+                  )}{' '}
+                  次（含重试）；日常规则动作不调用模型。每格 6.25 ha，背包按 kg
+                  计，食物按种类与储藏条件损耗；成年 16 岁、妊娠 280 天。
+                </>
+              ) : (
+                <>
+                  按初始人口估计，约{' '}
+                  {fmt(
+                    config.population *
+                      (config.days * config.dailyAP + Math.floor(config.days / 5)),
+                  )}{' '}
+                  次常规决策与反思；免费丢弃、重试和新增人口会增加调用。
+                </>
               )}
-              次常规决策与反思；免费丢弃、重试和新增人口会增加调用。费用依据填写的单价估算。
             </div>
             <button
               className="primary"
@@ -1403,7 +1635,12 @@ export default function App() {
               disabled={running || controlBusy}
               onClick={() => {
                 selectSource(undefined, false);
-                send('create', { config });
+                send('create', {
+                  config: {
+                    ...config,
+                    contextWindow: config.contextWindow ?? contextWindow ?? 65536,
+                  },
+                });
                 setAgentId(undefined);
                 setSelected(null);
                 setSettings(false);
@@ -1432,56 +1669,33 @@ export default function App() {
               第 {decision.day} 天 · 居民 #{decision.agentId} · {decision.attempts.length}{' '}
               次模型请求
             </p>
+            <h3>行动 / 反思</h3>
+            <pre>{JSON.stringify(decision.decision ?? decision.reflection, null, 2)}</pre>
             <h3>模型响应与校验</h3>
             <pre>{JSON.stringify(decision.attempts, null, 2)}</pre>
-            <h3>角色当时可见的上下文</h3>
-            {decision.contextSource === 'reconstructed-from-events' && (
-              <p className="note">
-                这条早期记录的观察从动作发生前的历史状态重建，原保存副本保留在导出文件中。
-              </p>
+            {decision.attempts.filter((a) => a.contextTrace).at(-1)?.contextTrace ? (
+              <ContextTrace
+                turnId={
+                  decision.attempts.filter((a) => a.contextTrace).at(-1)!.contextTrace!.turnId
+                }
+              />
+            ) : (
+              <>
+                <h3>角色当时可见的上下文</h3>
+                {decision.contextSource === 'reconstructed-from-events' && (
+                  <p className="note">
+                    这条早期记录的观察从动作发生前的历史状态重建，原保存副本保留在导出文件中。
+                  </p>
+                )}
+                {decision.contextPruned ? (
+                  <p className="note">
+                    规则动作保留结构化行动和状态增量；当时的世界状态可通过历史回放查看。
+                  </p>
+                ) : (
+                  <pre>{JSON.stringify(decision.context, null, 2)}</pre>
+                )}
+              </>
             )}
-            <pre>{JSON.stringify(decision.context, null, 2)}</pre>
-          </div>
-        </div>
-      )}
-      {statsOpen && (
-        <div className="modal-backdrop" onClick={() => setStatsOpen(false)}>
-          <div
-            className="modal"
-            role="dialog"
-            aria-label="统计详情"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button className="modal-close" onClick={() => setStatsOpen(false)}>
-              ×
-            </button>
-            <p className="eyebrow">EXPERIMENT METRICS</p>
-            <h2>世界的运行记录</h2>
-            <div className="stats-list">
-              {Object.entries({
-                模型: world?.usage.model ?? model,
-                已完成天数: world?.metrics.length ?? 0,
-                出生: world?.counters.births ?? 0,
-                死亡: world?.counters.deaths ?? 0,
-                赠与及照料: world?.counters.gifts ?? 0,
-                攻击: world?.counters.attacks ?? 0,
-                实验: world?.counters.experiments ?? 0,
-                配方发现: world?.counters.discoveries ?? 0,
-                无效动作: world?.counters.failures ?? 0,
-                模型请求错误: world?.usage.errors ?? 0,
-                格式修复: world?.usage.repairs ?? 0,
-                输入tokens: world?.usage.inputTokens ?? 0,
-                输出tokens: world?.usage.outputTokens ?? 0,
-                缓存命中tokens: world?.usage.cachedTokens ?? 0,
-                估算费用: world?.config.inputPrice ? world.usage.cost.toFixed(4) : '尚未配置单价',
-              }).map(([k, v]) => (
-                <div key={k}>
-                  <span>{k}</span>
-                  <b>{v}</b>
-                </div>
-              ))}
-            </div>
-            <p className="note">关系的解释由居民持有。这里记录可追溯的物理事件与调用数据。</p>
           </div>
         </div>
       )}

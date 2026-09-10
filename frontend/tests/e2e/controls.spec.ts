@@ -8,7 +8,7 @@ test('backend experiment controls reflect saving, resume errors and completion',
   let state = 'running';
   let resumeFails = true;
   const control = () => ({ state, reason: '', canResume: state === 'paused', concurrency: 6 });
-  await page.route('**/api/experiments/ui-controls/snapshot', (route) =>
+  await page.route('**/api/experiments/ui-controls/snapshot*', (route) =>
     route.fulfill({ json: { world, elapsedMs: 0, events: [], control: control() } }),
   );
   await page.route('**/api/experiments/ui-controls/events?*', (route) =>

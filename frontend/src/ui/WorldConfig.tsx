@@ -6,11 +6,13 @@ export default function WorldConfig({
   world,
   draft,
   model,
+  contextWindow,
   onCreate,
 }: {
   world?: World;
   draft: Config;
   model: string;
+  contextWindow?: number;
   onCreate: () => void;
 }) {
   const automatic =
@@ -23,6 +25,88 @@ export default function WorldConfig({
   const fullPerception = !world || ['mvp-1.6.0', 'mvp-1.7.0'].includes(world.rulesVersion);
   const legacy = world?.rulesVersion === 'mvp-1.0.0';
   const config = world ? { ...DEFAULT_CONFIG, ...world.config } : draft;
+  const effectiveWindow =
+    (world ? world.config.contextWindow : draft.contextWindow) ?? contextWindow;
+  const spawnLabel = {
+    compact: '扎堆出现（同一区域 2×2 四格）',
+    clusters: '分区随机',
+    uniform: '全图均匀随机',
+  }[config.spawn];
+  if (config.worldModel === 'ecology')
+    return (
+      <section className="eco-dashboard">
+        <h2>生态与混合决策配置</h2>
+        <p>
+          {config.size} × {config.size} 格 / 区域 · {config.regions} 个区域 · 每格 6.25 ha · 365 天
+          / 年
+        </p>
+        <p>
+          开局{' '}
+          {{ forager: '采集者', settlement: '农业定居', village: '初始村落' }[config.ecoPreset]} ·
+          第 {config.startDay} 年内日 · {config.population} 人 · {config.days} 天
+        </p>
+        <p>出生分布：{spawnLabel}</p>
+        {config.ecoPreset === 'village' && (
+          <p>
+            初始村落：河谷 2×2 格集中居住；农田 {(config.population * 0.35).toFixed(2)} ha， 45
+            天口粮与下一季种粮，共有住宅、粮仓、工棚、农具、水井和羊群。
+            作物按开局季节处于生长或待播状态；初始默认采食后返程，Agent 可自行修改。
+          </p>
+        )}
+        <p>
+          野兽：{config.wildlifeEnabled ? '开启' : '关闭'} · 一格内至少 5 人或 3
+          处已建建筑／已备农田形成聚居地；野兽在 3–5 格外出现，每区最多 3 只／群，每 5
+          天检查补充；同区野兽死亡后冷却 {config.beastRespawnDays ?? 10} 天。
+        </p>
+        <p>
+          野兽战斗力倍率 {config.beastPowerMultiplier ?? 1}×：生命{' '}
+          {Math.round(180 * (config.beastPowerMultiplier ?? 1))}–
+          {Math.round(260 * (config.beastPowerMultiplier ?? 1))}，攻击{' '}
+          {Math.round(24 * (config.beastPowerMultiplier ?? 1))}–
+          {Math.round(36 * (config.beastPowerMultiplier ?? 1))}
+          ，每日移动一格；武器、防具须完整且随身携带。先知外向性固定 0.85。
+        </p>
+        <p>
+          战斗策略由居民自行选择：遇战就逃（默认）／低血量撤退（默认阈值
+          60）／死战到底。自动战斗逐轮检查，紧急撤退优先于停留约束；每轮最多尝试一次，成功率为 10% +
+          80% × 血量比例；两步内没有安全陆路时无法脱身。
+        </p>
+        <p>
+          日劳动 {config.dailyAP} AP（每 AP 120 分钟）· 基础负重 {config.inventoryCapacity} kg ·
+          每人每日最多 {config.llmDailyCalls} 次请求 / {config.llmDailyTokens} token
+        </p>
+        {effectiveWindow && (
+          <p>
+            {world ? '本实验' : '下一次实验'}上下文窗口 {effectiveWindow.toLocaleString()} tokens ·
+            预留输出后约 90% 时压缩活动历史，固定规则与知识目录保留。
+          </p>
+        )}
+        <p>
+          规则执行生存和持续计划；模型负责社交与复杂目标。普通说话 / 公开发言 24
+          分钟，公开发言面向同一区域一格内所有活人。大声说话 / 全力观察 240 分钟。
+        </p>
+        <p>
+          Agent
+          可指定采集物品和数量、选择采集后返程，并设置定点停留的劳动分钟数；停留期间可原地生产与交流，到期或主动取消后恢复移动。
+        </p>
+        <p>
+          食物按重量、热量、水分与风险保存；温度和储藏设施影响损耗。种植受播种窗口、种子、积温、土壤和劳动约束。矿藏有限，森林慢速更新。
+        </p>
+        <p>
+          城墙四级：木栅墙 / 夯土围墙 / 干砌石墙 / 加固石墙，完工后保护同格营地，可修缮。木板刻字 60
+          分钟，石板刻字 120 分钟；铭文保存在实物与阅读者记忆中。
+        </p>
+        <p>成年 16 年 · 妊娠 280 天 · 明确接受后成功交配受孕率 100% · 产后冷却 180 天</p>
+        <p>
+          全局调用预算 {config.maxCalls} · Token 预算 {config.maxTokens} · 模型 {model}
+        </p>
+        <button onClick={onCreate}>配置新实验</button>
+        <details>
+          <summary>完整参数</summary>
+          <pre>{JSON.stringify(config, null, 2)}</pre>
+        </details>
+      </section>
+    );
   const spoiledGain = world
     ? (world.config.spoiledFoodHungerGain ?? 0)
     : config.spoiledFoodHungerGain;
@@ -42,12 +126,13 @@ export default function WorldConfig({
         ],
         ['实验周期', `${config.days} 天`],
         ['世界种子', config.seed],
-        ['初始分布', config.spawn === 'clusters' ? '分区随机' : '全图均匀随机'],
+        ['初始分布', spawnLabel],
         ['观察范围', '以本人为中心的九宫格'],
         ['全力观察', fullPerception ? '2 AP，3 格内（含斜向），保存当时环境快照' : '此版本未提供'],
         ['尸体', fullPerception ? '死亡后保留在原地，可观察，不是交流对象' : '此版本未提供'],
         ['观察方式', automatic ? '每次决策自动更新，0 AP' : '决策附带视野，look 动作另耗 1 AP'],
         ['普通说话', '1 AP，周围九宫格可听见'],
+        ['公开发言', '1 AP，周围九宫格内所有活人同时听见'],
         [
           '大声说话',
           automatic ? `${SHOUT_AP} AP，${SHOUT_RADIUS} 格内可听见（含斜向）` : '此版本未提供',

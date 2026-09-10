@@ -1,3 +1,5 @@
+import { nextEco, startEco, stepEco, observeEco, metricsEco, ecoId } from '../ecology/engine';
+import { Tx } from './transaction';
 import {
   ActionSchema,
   ConfigSchema,
@@ -32,6 +34,11 @@ import { SOCIAL_RULES, lonelinessCapacity, recordSpeaking } from './social';
 import { RECIPES } from './recipes';
 export { RECIPES } from './recipes';
 export function decisionIdFor(w: World, agentId: number) {
+  if (w.ecology)
+    return ecoId(
+      w,
+      w.agents.find((a) => a.id === agentId)!,
+    );
   const c = w.cursor;
   const free = c.ids[c.index] === agentId ? (c.freeActions ?? 0) : 0;
   return `${w.id}:${w.tick}:${c.phase}:${c.round}:${agentId}${free ? `:free-${free}` : ''}`;
@@ -39,6 +46,7 @@ export function decisionIdFor(w: World, agentId: number) {
 export function nextTask(
   w: World,
 ): { kind: 'action' | 'reflection'; agent: Agent; id: string } | null {
+  if (w.ecology) return nextEco(w);
   const c = w.cursor;
   if (c.phase === 'complete' || c.phase === 'end') return null;
   while (c.index < c.ids.length) {
@@ -74,126 +82,7 @@ const inventoryNames: Record<Item, string> = {
   basic_tool: '基础工具',
   advanced_tool: '高级工具',
 };
-class Tx {
-  private memoryIndex = 0;
-  agents = new Set<number>();
-  tiles = new Set<number>();
-  recipients: number[] = [];
-  before = new Map<number, Agent>();
-  initialIds: Set<number>;
-  constructor(public w: World) {
-    this.initialIds = new Set(w.agents.map((a) => a.id));
-  }
-  a(a: Agent) {
-    if (!this.before.has(a.id)) this.before.set(a.id, structuredClone(a));
-    this.agents.add(a.id);
-    return a;
-  }
-  t(x: number, y: number) {
-    const t = tileAt(this.w, x, y);
-    this.tiles.add(y * this.w.config.size + x);
-    return t;
-  }
-  tell(
-    a: Agent,
-    text: string,
-    source: Memory['source'] = 'observed',
-    speakerId?: number,
-    importance = 2,
-  ) {
-    this.a(a);
-    const m: Memory = {
-      id: `${this.w.seq + 1}:${a.id}:${this.memoryIndex++}`,
-      day: this.w.tick,
-      content: text,
-      source,
-      eventIds: [this.w.seq + 1],
-      speakerId,
-      importance,
-    };
-    a.memories.push(m);
-    a.inbox.push(m);
-    a.inbox = a.inbox.slice(-12);
-    a.memories = a.memories.slice(-200);
-    if (!this.recipients.includes(a.id)) this.recipients.push(a.id);
-  }
-  die(a: Agent, cause: string) {
-    if (a.death) return;
-    this.a(a);
-    a.hp = 0;
-    a.ap = 0;
-    a.death = { day: this.w.tick, cause };
-    if (['mvp-1.6.0', 'mvp-1.7.0'].includes(this.w.rulesVersion))
-      a.corpse = { x: a.x, y: a.y, sinceDay: this.w.tick };
-    const t = this.t(a.x, a.y);
-    validateFood(a.inventory, a.foodBatches);
-    validateFood(t.ground, t.groundFoodBatches);
-    t.groundFoodBatches = mergeFood(t.groundFoodBatches, a.foodBatches);
-    for (const [k, v] of Object.entries(a.inventory)) add(t.ground, k as Item, v!);
-    a.inventory = {};
-    a.foodBatches = [];
-    a.pregnancy = undefined;
-    this.w.counters.deaths++;
-  }
-  finish(
-    type: string,
-    text: string,
-    decisionId: string,
-    success: boolean,
-    actor?: Agent,
-    targetId?: number,
-    metricChange = false,
-  ): WorldEvent {
-    const w = this.w,
-      day = w.tick,
-      round = w.cursor.round;
-    w.seq++;
-    w.lastEvent = text;
-    const { agents, tiles, proposals, metrics, ...meta } = w;
-    const changed = agents.filter((a) => this.agents.has(a.id));
-    const delta = (before: Memory[], after: Memory[]) => {
-      const oldIds = new Set(before.map((m) => m.id)),
-        newIds = new Set(after.map((m) => m.id));
-      return {
-        drop: before.filter((m) => !newIds.has(m.id)).length,
-        append: after.filter((m) => !oldIds.has(m.id)),
-      };
-    };
-    const patch: Patch = {
-      agents: changed.filter((a) => !this.initialIds.has(a.id)),
-      agentChanges: changed
-        .filter((a) => this.initialIds.has(a.id))
-        .map((a) => {
-          const before = this.before.get(a.id)!;
-          const { memories, inbox, claims, ...state } = a;
-          return {
-            state,
-            memories: delta(before.memories, memories),
-            inbox: delta(before.inbox, inbox),
-            claims: delta(before.claims, claims),
-          };
-        }),
-      tiles: [...this.tiles].map((i) => tiles[i]),
-      proposals,
-      meta,
-      ...(metricChange ? { metrics } : {}),
-    };
-    return structuredClone({
-      seq: w.seq,
-      day,
-      round,
-      type,
-      actorId: actor?.id,
-      targetId,
-      position: actor ? [actor.x, actor.y] : undefined,
-      text,
-      success,
-      decisionId,
-      recipients: this.recipients,
-      patch,
-    });
-  }
-}
+
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
 };
@@ -210,6 +99,7 @@ function sameMaterials(a: Inventory, b: Inventory) {
 const allowedChild = new Set([
   'move',
   'shout',
+  'public_speak',
   'survey',
   'eat',
   'take',
@@ -221,6 +111,7 @@ const allowedChild = new Set([
   'wait',
 ]);
 export function act(w: World, agentId: number, decision: Decision, decisionId: string): WorldEvent {
+  if (w.ecology) return startEco(w, agentId, decision, decisionId);
   const a = w.agents.find((a) => a.id === agentId);
   if (!a || a.death) throw new Error('Cannot schedule a dead or missing agent');
   const tx = new Tx(w);
@@ -424,6 +315,11 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
           tx.die(b, '攻击');
           text += '，对方死亡并掉落物品';
         }
+        break;
+      }
+      case 'public_speak': {
+        w.counters.chats++;
+        text = `${brief(a)} 公开说：“${action.text}”`;
         break;
       }
       case 'shout': {
@@ -640,8 +536,12 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
         tx.tell(
           b,
           text,
-          action.type === 'chat' || action.type === 'shout' ? 'heard' : 'observed',
-          action.type === 'chat' || action.type === 'shout' ? a.id : undefined,
+          action.type === 'chat' || action.type === 'shout' || action.type === 'public_speak'
+            ? 'heard'
+            : 'observed',
+          action.type === 'chat' || action.type === 'shout' || action.type === 'public_speak'
+            ? a.id
+            : undefined,
           action.type === 'attack' ? 8 : 2,
         );
     if (targetId) {
@@ -669,7 +569,7 @@ export function act(w: World, agentId: number, decision: Decision, decisionId: s
   }
   if (
     success &&
-    (action.type === 'chat' || action.type === 'shout') &&
+    (action.type === 'chat' || action.type === 'shout' || action.type === 'public_speak') &&
     tx.recipients.some((id) => id !== a.id)
   ) {
     const wasDepressed = a.social?.depressed;
@@ -718,6 +618,7 @@ export function reflect(w: World, agentId: number, r: Reflection, decisionId: st
   return tx.finish('reflection', `${brief(a)} 整理了近期经历`, decisionId, true, a);
 }
 export function metrics(w: World): Metrics {
+  if (w.ecology) return metricsEco(w);
   const alive = living(w);
   const dated = w.rulesVersion !== 'mvp-1.0.0';
   const stores = [...alive.map((a) => a.foodBatches), ...w.tiles.map((t) => t.groundFoodBatches)];
@@ -753,6 +654,7 @@ export function metrics(w: World): Metrics {
   };
 }
 export function endDay(w: World): WorldEvent {
+  if (w.ecology) return stepEco(w);
   const tx = new Tx(w);
   const day = w.tick;
   let born = 0,
@@ -864,7 +766,8 @@ export function applyEvent(w: World, e: WorldEvent): World {
     for (const key of ['memories', 'inbox', 'claims'] as const)
       a[key] = [...a[key].slice(c[key].drop), ...c[key].append];
   }
-  for (const t of p.tiles) w.tiles[t.y * w.config.size + t.x] = t;
+  for (const t of p.tiles)
+    w.tiles[(t.eco?.region ?? 0) * w.config.size * w.config.size + t.y * w.config.size + t.x] = t;
   w.proposals = p.proposals;
   if (p.metrics) w.metrics = p.metrics;
   return w;

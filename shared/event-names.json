@@ -1,4 +1,7 @@
 {
+  "inscribe": "刻字",
+  "wildlife": "野兽活动",
+  "fight_beast": "抵御野兽",
   "config_changed": "预算",
   "recovery": "恢复",
   "move": "移动",
@@ -8,6 +11,7 @@
   "shout": "大声说话",
   "survey": "全力观察",
   "chat": "对话",
+  "public_speak": "公开发言",
   "give": "给予",
   "feed": "照料",
   "attack": "攻击",

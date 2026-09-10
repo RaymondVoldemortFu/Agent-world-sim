@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
+import { contextHeads, transferContexts } from '../frontend/src/runtime/context-archive';
 import type { World, WorldEvent, DecisionRecord, Snapshot } from '../frontend/src/sim/types';
 export async function* lines(file: string) {
   if (!fs.existsSync(file)) return;
@@ -39,12 +40,18 @@ export async function repairJournal(folder: string, world: World) {
   }
   return committed;
 }
-export async function exportJournal(folder: string, world: World, elapsedMs = 0) {
+export async function exportJournal(
+  folder: string,
+  world: World,
+  elapsedMs = 0,
+  base = 'http://127.0.0.1:8000',
+) {
   const out = fs.createWriteStream(path.join(folder, 'run.json.tmp'));
   const write = async (s: string) => {
     if (!out.write(s)) await once(out, 'drain');
   };
   const committed = new Set<string>();
+  const heads = new Set(contextHeads(world, []));
   await write(
     '{"format":"agent-world-v1","elapsedMs":' +
       JSON.stringify(elapsedMs) +
@@ -63,12 +70,14 @@ export async function exportJournal(folder: string, world: World, elapsedMs = 0)
       const keep = key === 'decisions' ? committed.has(item.id) : item.seq <= world.seq;
       if (!keep) continue;
       if (key === 'events') committed.add(item.decisionId);
+      if (key === 'decisions') for (const head of contextHeads(world, [item])) heads.add(head);
       await write((first ? '' : ',') + line);
       first = false;
     }
     await write(']');
   }
-  await write('}');
+  const nodes = await transferContexts('export', world.id, [...heads], undefined, base);
+  await write(',"contextNodes":' + JSON.stringify(nodes) + '}');
   out.end();
   await once(out, 'finish');
   fs.renameSync(path.join(folder, 'run.json.tmp'), path.join(folder, 'run.json'));

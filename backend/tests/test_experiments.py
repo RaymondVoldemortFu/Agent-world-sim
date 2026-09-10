@@ -35,7 +35,7 @@ class ExperimentControlTest(unittest.IsolatedAsyncioTestCase):
         self.artifacts.start()
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), FakeModel)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.env = patch.dict('os.environ', {'SIMULATION_API_URL': f'http://127.0.0.1:{self.server.server_port}'})
+        self.env = patch.dict('os.environ', {'SIMULATION_API_URL': f'http://127.0.0.1:{self.server.server_port}', 'SIMULATION_STORAGE': 'files', 'MYSQL_DATABASE': ''})
         self.env.start()
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost')
 

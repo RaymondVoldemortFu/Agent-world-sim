@@ -9,3 +9,5 @@ __pycache__/
 playwright-report/
 test-results/
 artifacts/
+
+.DS_Store
