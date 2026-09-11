@@ -12,6 +12,7 @@ from uuid import uuid4
 from collections import Counter
 from . import context_repository as repo
 from .storage import ROOT
+from .manor_prompt import MANOR_COMMON, MANOR_DECIDE
 
 VERSION = "context-1.0"
 TRAITS = json.loads((ROOT / "shared/personality.json").read_text())
@@ -19,7 +20,7 @@ PROPHET_ORIGIN = "你是先知。你从诞生之初便知道：这个世界由�
 COMMON = """你是史前世界中的独立人类。只依据自身观察、经历与注明来源的听闻判断。你有自己的利益、偏好与关系，目标可包括生存、安全、亲密、地位、财富、知识和自主；根据人格与经历权衡。帮助、交易、拒绝、独处、竞争、谈判或对抗均由你决定。尽责不等于利他，外向不等于友善，不必每次都安排运输或讲话。
 生理与原子劳动由规则引擎处理。你选择长期生产方向、交流、合作条件、分工、冲突与迁居；可以延续现有计划。决定是意图，只有后续执行反馈才证明事情发生。所有物理效果、物品和同意条件由引擎检查。
 手持物品属于背包，地面物品尚未拿取；丢弃只销毁手持物品，放下则仍留在地面。社会产权靠人们自行主张与协商。人物离开视野表示目前位置未知；只有明确的死亡观察才能认定死亡。尸体不会回应。
-普通聊天和public_speak公开发言均为24分钟（0.2AP）。public_speak让同一区域一格内（含斜向）的所有活人同时听到，可用于召集讨论、向多人传授工艺、提出共同工程和分工；听到不代表同意。shout240分钟让两格内活人听见；全力观察240分钟查看三格。每AP120分钟，每日AP见物理配置。有效主动说话降低孤单20；连续两天未主动说话每日孤单+20，满条抑郁每日扣10生命直到孤单清空。单听、自言自语都不算有效说话。
+普通聊天和public_speak公开发言均为24分钟（0.2AP）。public_speak让同一区域一格内（含斜向）的所有活人同时听到，可用于召集讨论、向多人传授工艺、提出共同工程和分工；听到不代表同意。shout240分钟让五格内活人听见；全力观察240分钟查看三格。每AP120分钟，每日AP见物理配置。有效主动说话降低孤单20；连续两天未主动说话每日孤单+20，满条抑郁每日扣10生命直到孤单清空。单听、自言自语都不算有效说话。
 繁衍须双方成年异性同格、饱食度至少60、有效提案与对方明确接受，再实际共同执行。propose发起、accept接受、revoke撤回；提案在发起日+3失效。规则不能替任何人同意。成功必定受孕，妊娠与成年年龄按世界规则。
 一年365天，春60–151、夏152–243、秋244–334，其余为冬。地块250米见方、6.25公顷；物资以kg计、成年基准2500kcal/天。矿藏有限，森林缓慢生长；食物风险与剩余热量分别变化。作物须备地、适季播种、照管、生长积温和收割。季节与资源数据以观察为准。
 已掌握知识目录只说明你知道哪些工艺；执行时须备齐真实材料、工具、设施和劳动。未知工艺可以向他人学习或依据有效线索试验。先知掌握全工艺，但仍受材料与劳动约束。传授时可选择提供具体方法或保留知识，取决于你的动机。
@@ -36,12 +37,15 @@ note是最多300字的私有判断，记入你的长期记忆，不能冒充事�
 COMPRESS = """整理以下活动历史作为该角色下一阶段的工作记忆。只输出JSON：{"summary":"摘要"}。
 摘要最多1800个字符。保留当前目标与进展、未解决问题、双方承诺与期限、关系变化及证据、猜测的不确定性、关键事件ID。按事件时序更新相互矛盾的信息，不把意图当作完成，不把听闻改成事实。不要创造条目。固定规则、人格、配方目录由程序原样保存，不必复述它们。"""
 LABELS = {
+    "manor": "本次可见领地设施与农田",
     "people": "可见活人",
     "beasts": "可见野兽（活体威胁）",
     "settlements": "可见聚居地",
     "combat": "随身有效战斗装备",
     "combatPolicy": "本人战斗策略",
     "navigation": "导航状态",
+    "lastTaskResult": "最近成功任务回执",
+    "dailyRoutine": "当前自动日程",
     "goalBlocked": "目标执行受阻",
     "inscriptions": "脚下与自己携带的铭文（作者主张）",
     "corpses": "观察到的尸体",
@@ -105,6 +109,8 @@ def persona(o):
     text = f"你的身份：{a['name']} #{a['id']}，性别{a['sex']}。以下人格决定偏好，不要求你每次采取相同动作。\n"
     if a.get("role") == "prophet":
         text += PROPHET_ORIGIN + "\n"
+    if a.get("biography"):
+        text += a["biography"] + "\n"
     for i, trait in enumerate(TRAITS):
         n = max(0, min(1, values[i] if i < len(values) else 0.5))
         band = min(4, int(n * 5))
@@ -144,8 +150,9 @@ def fixed(o):
         if k in p
     }
     return [
-        {"role": "system", "content": COMMON + wildlife_common_knowledge(o) + DECIDE},
+        {"role": "system", "content": (MANOR_COMMON + MANOR_DECIDE) if o.get("manor") is not None else COMMON + wildlife_common_knowledge(o) + DECIDE},
         {"role": "user", "content": "本实验固定物理配置：" + atom(rules)},
+        *([{"role": "user", "content": "本领地共知地图（固定地标与容器，不含库存和人物位置）：\n" + o["manorAtlas"]}] if o.get("manorAtlas") else []),
         {"role": "user", "content": persona(o)},
     ]
 
@@ -222,11 +229,12 @@ def observation(o, previous=None, memories=(), repair=None):
         f"第{o['day']}天 {atom(o.get('minute', 0))}分钟｜观察边界E{o['seq']}",
         f"当前校准：你在区域{a['region']}({','.join(map(str, a['position']))})；余{math.floor(a['ap'] * 120 + 1e-6)}分钟；生命{atom(a['hp'])}，饱食{atom(a['hunger'])}，体内水{atom(a['water'])}L；孤单{atom(a['loneliness'])}/{atom(a['lonelinessCapacity'])}，抑郁={atom(a['depressed'])}。",
     ]
-    for k in ("bag", "goal", "movement", "forageTrip", "gatherOrigin", "lastFailure", "lastThought", "adult", "pregnancy", "skills", "combat", "combatPolicy", "navigation", "goalBlocked"):
+    for k in ("bag", "goal", "movement", "forageTrip", "gatherOrigin", "lastFailure", "lastThought", "adult", "pregnancy", "skills", "combat", "combatPolicy", "navigation", "goalBlocked", "lastTaskResult", "dailyRoutine"):
         if not previous or a.get(k) != prev.get(k):
             lines.append(LABELS.get(k, k) + "：" + atom(a.get(k)))
     for k in (
         "calendar",
+        "manor",
         "people",
         "corpses",
         "beasts",
@@ -292,14 +300,14 @@ def token_allowance(o):
 def context_window(o):
     value = o.get("policy", {}).get("contextWindow")
     if value is None:
-        return max(4000, int(os.getenv("AGENT_CONTEXT_WINDOW", "65536")))
+        return max(4000, int(os.getenv("AGENT_CONTEXT_WINDOW", "100000")))
     if type(value) is not int or not 4000 <= value <= 262144:
         raise ValueError("实验上下文窗口必须是4000–262144之间的整数")
     return value
 
 
 async def decide(req, model, send):
-    """send(messages,max_tokens,purpose) returns a billed provider attempt envelope."""
+    """send(messages,purpose) returns a billed provider attempt envelope."""
     o = req.context
     window = context_window(o)
     actor = o["self"]["id"]
@@ -354,13 +362,15 @@ async def decide(req, model, send):
             update["content"] = (
                 "新增已确认知识：" + ", ".join(learned) + "\n" + update["content"]
             )
-        output = min(8192, max(1024, window // 3)) if o.get("deepReflection") else 600
-        threshold = int((window - output) * 0.9)
+        # Planning headroom only; providers receive no output token cap.
+        output_reserve = 2000
+        compression_reserve = 1200
+        threshold = int((window - output_reserve) * 0.9)
         auxiliary = []
         compressed = False
         pinned = prefix + [knowledge(o)]
         if (
-            tokens(pinned + [observation(o, None, recalls, req.repair)]) + output
+            tokens(pinned + [observation(o, None, recalls, req.repair)]) + output_reserve
             > window
         ):
             return {
@@ -383,14 +393,14 @@ async def decide(req, model, send):
                         ),
                     },
                 ]
-                if tokens(prompt) + 1200 > window:
+                if tokens(prompt) + compression_reserve > window:
                     return {"deferred": True, "reason": "已有历史超过本实验压缩输入窗口，请恢复原窗口或增大配置"}
                 if (
-                    tokens(prompt) + 1200 + tokens(pinned + [update]) + output
+                    tokens(prompt) + compression_reserve + tokens(pinned + [update]) + output_reserve
                     > token_allowance(o) - req.spentTokens
                 ):
                     return {"deferred": True, "reason": "剩余token预算不足以压缩并决策"}
-                result = await send(prompt, 1200, "compression")
+                result = await send(prompt, "compression")
                 result["id"] = key + ":compression:" + uuid4().hex
                 auxiliary = [result]
                 if result.get("error"):
@@ -427,15 +437,15 @@ async def decide(req, model, send):
             for a in auxiliary if a["id"] not in getattr(req, "spentAttemptIds", [])
         )
         if (
-            tokens(messages) + output > window
-            or tokens(messages) + output > token_allowance(o) - req.spentTokens - newly_billed
+            tokens(messages) + output_reserve > window
+            or tokens(messages) + output_reserve > token_allowance(o) - req.spentTokens - newly_billed
         ):
             return {
                 "deferred": True,
                 "auxiliaryAttempts": auxiliary,
                 "reason": "本次决策超出上下文或token预算",
             }
-        result = await send(messages, output, "deep_reflection" if o.get("deepReflection") else "decision")
+        result = await send(messages, "deep_reflection" if o.get("deepReflection") else "decision")
         result["id"] = key + ":decision"
         if result.get("error"):
             result["id"] += ":" + uuid4().hex

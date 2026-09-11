@@ -163,7 +163,7 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
             spentTokens=0,
         )
 
-    async def provider(self, messages, limit, purpose):
+    async def provider(self, messages, purpose):
         self.sent.append((copy.deepcopy(messages), purpose))
         text = (
             {"summary": "计划尚未完成；阿禾曾承诺交换石材，兑现情况未知。"}
@@ -302,8 +302,8 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_paid_compression_survives_decision_failure_and_retry(self):
         o = await self.long_context()
-        async def failing(messages, limit, purpose):
-            result = await self.provider(messages, limit, purpose)
+        async def failing(messages, purpose):
+            result = await self.provider(messages, purpose)
             if purpose == "decision":
                 result["error"] = "temporary failure"
             return result
@@ -355,8 +355,8 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bad_compaction_keeps_history_and_bills_each_real_attempt(self):
         o = await self.long_context()
-        async def malformed(messages, limit, purpose):
-            result = await self.provider(messages, limit, purpose)
+        async def malformed(messages, purpose):
+            result = await self.provider(messages, purpose)
             result["content"] = "{}"
             return result
         before = repo.messages(o["contextHead"])

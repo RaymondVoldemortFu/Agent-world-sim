@@ -214,13 +214,13 @@ it('guides duplicate offers into one accepted proposal and completes mating with
   expect(hashWorld(replay)).toBe(hashWorld(w));
 });
 
-it('shout reaches distance two including diagonals, with attribution and exact replay', () => {
+it('shout reaches distance five including diagonals, with attribution and exact replay', () => {
   const w = createWorld({ population: 5 });
   const positions = [
     [3, 3],
-    [5, 3],
-    [5, 5],
-    [6, 3],
+    [8, 3],
+    [8, 8],
+    [9, 3],
     [4, 3],
   ];
   w.agents.forEach((a, i) => {
@@ -293,18 +293,18 @@ it('two shouts use the entire daily AP allocation with no extra action slots', (
   expect(shouts).toBe(2);
 });
 
-it('serializes listeners at radius two and preserves distant prefetched observations', () => {
+it('serializes listeners at radius five and preserves distant prefetched observations', () => {
   const w = createWorld({ population: 2 });
   const [a, b] = w.agents;
   a.x = a.y = 3;
-  b.x = b.y = 5;
+  b.x = b.y = 8;
   expect(nextBatch(w, 6)).toHaveLength(1);
   act(w, a.id, { intent: '', action: { type: 'shout', text: '近处消息' } }, nextTask(w)!.id);
   expect(observe(w, nextBatch(w, 6)[0].agent).recentEvents.at(-1)?.content).toContain('近处消息');
   const distant = createWorld({ population: 2 });
   const [x, y] = distant.agents;
   x.x = x.y = 3;
-  y.x = y.y = 6;
+  y.x = y.y = 9;
   const batch = nextBatch(distant, 6);
   expect(batch).toHaveLength(2);
   const prefetched = structuredClone(observe(distant, y));

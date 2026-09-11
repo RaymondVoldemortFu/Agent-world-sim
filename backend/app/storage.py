@@ -107,9 +107,14 @@ def initialize_schema():
     with transaction() as q:
         for statement in statements:
             q.execute(statement)
+        q.execute("SHOW INDEX FROM events WHERE Key_name='actor_history'")
+        if not q.fetchone():
+            q.execute("CREATE INDEX actor_history ON events(experiment,actor_id,type,seq)")
         from .context_repository import initialize
 
         initialize(q)
+        from .news import initialize as initialize_news
+        initialize_news(q)
 
 
 def exists(name):
@@ -726,3 +731,26 @@ def export_stream(name):
             yield ("" if first else ",") + json.dumps(node, ensure_ascii=False)
             first = False
         yield "]}"
+
+
+def decision_history(name, agent_id, through, before, limit, model_only=False):
+    boundary = min(through, before - 1) if before is not None else through
+    scan_limit=200 if model_only else limit
+    with transaction() as q:
+        q.execute("""SELECT e.seq,e.day,d.payload FROM events e
+          JOIN decisions d ON d.experiment=e.experiment AND d.id=e.decision_id
+          WHERE e.experiment=%s AND e.actor_id=%s AND e.type='action_started' AND e.seq<=%s
+          ORDER BY e.seq DESC LIMIT %s""", (name,agent_id,boundary,scan_limit+1))
+        rows=q.fetchall()
+    result=[]
+    cursor=None
+    for row in rows[:scan_limit]:
+        cursor=row['seq']
+        r=decode(row['payload'])
+        if model_only and not r.get('attempts'):
+            continue
+        result.append({'id':r['id'],'seq':row['seq'],'day':row['day'],'source':r.get('source','rule'),
+                       'decision':r.get('decision'), 'attempts':len(r.get('attempts',[]))})
+        if len(result)>=limit:
+            break
+    return {'rows':result,'next':cursor if cursor is not None and any(r['seq']<cursor for r in rows) else None}

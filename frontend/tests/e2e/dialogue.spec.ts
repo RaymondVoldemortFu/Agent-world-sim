@@ -58,7 +58,7 @@ test('dialogue analysis runs in a worker, filters evidence and hearing relations
   await page.goto('/?experiment=nlp-ui&page=dialogue');
   const panel = page.getByRole('region', { name: '对话NLP分析' });
   await expect(panel.getByRole('status')).toContainText('当前筛选 205 条');
-  expect(requests.length).toBe(3);
+  expect(requests.length).toBe(4);
   await expect(panel.locator('.experience-row')).toHaveCount(60);
   await panel.getByRole('button', { name: '下一页对话', exact: true }).click();
   await expect(panel.locator('.experience-row').first()).toContainText('#145');
@@ -79,7 +79,7 @@ test('dialogue analysis runs in a worker, filters evidence and hearing relations
   await expect(edge).toHaveAttribute('aria-label', /205 次/);
   await edge.click();
   await expect(panel.getByRole('status')).toContainText('当前筛选 205 条');
-  expect(requests.length).toBe(3);
+  expect(requests.length).toBe(4);
   expect(llmCalls).toBe(0);
   await page.getByLabel('分析起始日').fill('99');
   await page.getByLabel('分析结束日').fill('2');

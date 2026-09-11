@@ -1,3 +1,6 @@
+import { CRAFTS } from '../manor/catalog';
+import { ITEMS } from '../ecology/catalog';
+import { MANOR_DEFAULTS } from '../manor/world';
 import type { Config, World } from '../sim/types';
 import { DEFAULT_CONFIG } from '../sim/types';
 import { RULES_VERSION, SHOUT_AP, SHOUT_RADIUS } from '../sim/world';
@@ -32,6 +35,80 @@ export default function WorldConfig({
     clusters: '分区随机',
     uniform: '全图均匀随机',
   }[config.spawn];
+  if (config.ecoPreset === 'manor') {
+    const m = { ...MANOR_DEFAULTS, ...config.manorSettings };
+    return (
+      <section className="eco-dashboard">
+        <h2>鸦溪领地 · 实验配置</h2>
+        <p>24×24 格 · 每格约15米的建筑/田条入口尺度 · 31名初始居民 · 6户家庭 · 48条田</p>
+        <p>
+          每30天收成一次；实际产量随已投入劳动变化。潜在月产1800人日粮，每人每日约0.7353kg谷物。
+        </p>
+        <table>
+          <tbody>
+            {[
+              ['地租惯例', `${m.taxRate * 100}%（由实际交付实现）`],
+              ['固定王税', `${m.royalTax} 人日粮 / 期；首次D35`],
+              ['作物灾害', m.shockDay ? `D${m.shockDay}起，产量倍率${m.yieldMultiplier}` : '关闭'],
+              ['拖欠时间限制', `${m.graceDays} 天`],
+              ['王军镇压条件', `连续欠税超过 ${2 * m.graceDays} 天，或使者返回报告叛乱；无宽限`],
+              ['王军人数', `${m.armySize}`],
+              ['王军行动', '无差别追击居民、破门攻击；王室供应军粮'],
+              ['日劳动', `${config.dailyAP} AP × 120分钟`],
+              ['背包', `${config.inventoryCapacity}kg`],
+              ['模型', model],
+              ['上下文窗口', `${effectiveWindow ?? 100000} tokens`],
+              [
+                '模型预算',
+                `${config.llmDailyCalls} 次/人/天；${config.llmDailyTokens} tokens/人/天`,
+              ],
+              ['实验时长', `${config.days} 天`],
+            ].map(([k, v]) => (
+              <tr key={k}>
+                <th>{k}</th>
+                <td>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p>
+          日常取粮、固定田劳动和回家存粮由规则执行；身份、忠诚和交税决定来自个人上下文与自主决策。地图外国王执行实收税账和出兵规则。
+        </p>
+        <details>
+          <summary>工棚合成表</summary>
+          <table>
+            <thead>
+              <tr>
+                <th>配方</th>
+                <th>投入</th>
+                <th>产物</th>
+                <th>分钟</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(CRAFTS).map(([id, r]) => (
+                <tr key={id}>
+                  <th>{ITEMS[id]?.name ?? id}</th>
+                  <td>
+                    {Object.entries(r.inputs)
+                      .map(([i, n]) => `${ITEMS[i]?.name ?? i} ${n}kg`)
+                      .join('、')}
+                  </td>
+                  <td>
+                    {Object.entries(r.outputs)
+                      .map(([i, n]) => `${ITEMS[i]?.name ?? i} ${n}kg`)
+                      .join('、')}
+                  </td>
+                  <td>{r.minutes}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+        <button onClick={onCreate}>配置下一次实验</button>
+      </section>
+    );
+  }
   if (config.worldModel === 'ecology')
     return (
       <section className="eco-dashboard">
@@ -42,8 +119,12 @@ export default function WorldConfig({
         </p>
         <p>
           开局{' '}
-          {{ forager: '采集者', settlement: '农业定居', village: '初始村落' }[config.ecoPreset]} ·
-          第 {config.startDay} 年内日 · {config.population} 人 · {config.days} 天
+          {
+            { forager: '采集者', settlement: '农业定居', village: '初始村落', manor: '中世纪领地' }[
+              config.ecoPreset
+            ]
+          }{' '}
+          · 第 {config.startDay} 年内日 · {config.population} 人 · {config.days} 天
         </p>
         <p>出生分布：{spawnLabel}</p>
         {config.ecoPreset === 'village' && (

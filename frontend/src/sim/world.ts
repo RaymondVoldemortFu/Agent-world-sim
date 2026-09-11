@@ -20,10 +20,11 @@ export const SUPPORTED_REPLAY_VERSIONS = [
   'mvp-1.5.0',
   'mvp-1.6.0',
   'mvp-1.7.0',
+  'manor-1.0.0',
   RULES_VERSION,
 ];
 export const SHOUT_AP = 2;
-export const SHOUT_RADIUS = 2;
+export const SHOUT_RADIUS = 5;
 export function rand(w: { rng: number }) {
   w.rng = (Math.imul(1664525, w.rng) + 1013904223) >>> 0;
   return w.rng / 4294967296;
@@ -91,6 +92,15 @@ export function makeAgent(w: World, x: number, y: number, parents: number[] = []
 }
 export function createWorld(overrides: Partial<Config> = {}, id?: string): World {
   const config = ConfigSchema.parse({ ...DEFAULT_CONFIG, ...overrides });
+  if (config.ecoPreset === 'manor')
+    Object.assign(config, {
+      worldModel: 'ecology',
+      controller: 'hybrid',
+      size: 24,
+      population: 31,
+      regions: 1,
+      wildlifeEnabled: false,
+    });
   const size = config.size;
   const w: World = {
     version: 1,
@@ -223,4 +233,6 @@ export function hashWorld(w: World) {
 }
 
 export const canRunWorld = (w: World) =>
-  w.rulesVersion === RULES_VERSION || (!w.ecology && w.rulesVersion === 'mvp-1.7.0');
+  w.rulesVersion === RULES_VERSION ||
+  (w.rulesVersion === 'manor-1.0.0' && !!w.manor) ||
+  (!w.ecology && w.rulesVersion === 'mvp-1.7.0');

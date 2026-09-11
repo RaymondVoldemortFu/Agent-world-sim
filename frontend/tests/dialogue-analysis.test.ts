@@ -95,3 +95,29 @@ describe('rule-based dialogue analysis', () => {
     expect(new SimilarityIndex([]).similar(1, new Set())).toEqual([]);
   });
 });
+
+describe('village / manor language categories', () => {
+  it('separates reserves from field labor, and gives specific evidence priority', () => {
+    const fixtures: [string, string, string[]][] = [
+      ['今天核对账目，公仓入库20kg，实收与收据一致。', 'accounting', ['reserves', 'records']],
+      ['如果秋收后上缴税粮，能否减税或缓缴？', 'negotiate', ['taxes']],
+      ['王室税必须立即上缴，不得拖欠。', 'direct', ['taxes', 'authority']],
+      ['小心，随身口粮耗尽会饿死，先补粮！', 'warning', ['survival', 'reserves']],
+    ];
+    for (const [text, primary, topics] of fixtures) {
+      const row = classify(speech(text));
+      expect(row.primary, text).toBe(primary);
+      expect(row.topics, text).toEqual(expect.arrayContaining(topics));
+      expect(row.evidence[`intent:${primary}`]?.length).toBeGreaterThan(0);
+    }
+    expect(classify(speech('家里粮箱存有谷物和粮食')).topics).not.toContain('farming');
+    expect(classify(speech('在田里耕作，收获后入库')).topics).toContain('farming');
+    expect(classify(speech('我没有收到，也不同意交易。')).intents).not.toContain('agree');
+    const protest = classify(speech('我不交税，也不愿合作。'));
+    expect(protest.topics).toContain('taxes');
+    expect(protest.intents).not.toContain('cooperate');
+    expect(classify(speech('卫兵用钥匙开门，邻居在家庭账簿上登记自动任务')).topics).toEqual(
+      expect.arrayContaining(['security', 'family', 'records', 'routine']),
+    );
+  });
+});

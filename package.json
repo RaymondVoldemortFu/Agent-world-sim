@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n API,WEB 'uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000' 'vite --host 127.0.0.1'",
+    "dev": "concurrently -k -n API,CONT,WORLD,WEB 'uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000' 'uv run --project backend uvicorn app.continuous_api:app --app-dir backend --host 127.0.0.1 --port 8002 --no-access-log' 'tsx scripts/continuous/server.ts' 'vite --host 127.0.0.1'",
+    "dev:continuous": "concurrently -k -n CONT,WORLD 'uv run --project backend uvicorn app.continuous_api:app --app-dir backend --host 127.0.0.1 --port 8002 --no-access-log' 'tsx scripts/continuous/server.ts'",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -15,6 +16,7 @@
   },
   "dependencies": {
     "dexie": "^4.0.11",
+    "pixi.js": "^8.20.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "recharts": "^2.15.3",

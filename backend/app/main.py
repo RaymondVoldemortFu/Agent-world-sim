@@ -1,6 +1,7 @@
 """Local-only model proxy. World state never enters this process globally."""
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -41,7 +42,7 @@ people 只包含当前观察到的活人；corpses 是地面尸体，明确标�
  take{item,quantity}从脚下地面捡入背包，1AP；place{item,quantity}从背包放到地上，1AP；drop{item,quantity}销毁背包物品，成功时0AP，不产生地面物品；give{targetId,item,quantity}/feed{targetId}目标必须同格；
  chat{targetId?:数字,text:最多200字,proposal?:{kind:reproduce,targetId},acceptProposalId?:字符串,revokeProposalId?:字符串}能被附近九宫格听到；
  public_speak{text:最多240字}公开发言，消耗1AP，同时面向周围九宫格内所有活人，不填targetId，可用于群体讨论、分工与知识传授，听见不代表同意；
- shout{text:最多200字}大声说话，消耗2AP，距离两格以内（包含斜向，以横纵坐标差的最大值计算）的所有活人能听到，听众记忆标注说话者；传播声音不会扩大你的视觉范围，此动作只广播文本；
+ shout{text:最多200字}大声说话，消耗2AP，距离五格以内（包含斜向，以横纵坐标差的最大值计算）的所有活人能听到，听众记忆标注说话者；传播声音不会扩大你的视觉范围，此动作只广播文本；
  experiment{materials:{wood?:数量,stone?:数量,ore?:数量},method:combine|grind|assemble}探索未知配方；
  craft{recipeId}只能使用knownRecipes中已掌握的配方；terraform{}持基础工具在平原开垦共需3次劳动；
  build{recipeId:棚屋配方ID,materials?:{wood?:数量,stone?:数量}}向脚下工程贡献材料或不填材料贡献劳动；
@@ -74,13 +75,23 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(storage.initialize_schema)
     app.state.client = httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0))
     app.state.semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-    yield
-    await app.state.client.aclose()
+    from .news import worker as news_worker
+    news_task = asyncio.create_task(news_worker(app)) if os.getenv("MYSQL_DATABASE") else None
+    try:
+        yield
+    finally:
+        if news_task:
+            news_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await news_task
+        await app.state.client.aclose()
 
 
 app = FastAPI(title="Agent World local proxy", lifespan=lifespan)
 app.include_router(storage_router)
 app.include_router(storage_imports)
+from .news import router as news_router
+app.include_router(news_router)
 
 
 class DecisionRequest(BaseModel):
@@ -109,7 +120,7 @@ async def config():
         "promptVersion": PROMPT_VERSION,
         "configured": bool(os.getenv("DEEPSEEK_API_KEY")),
         "maxConcurrentRequests": MAX_CONCURRENT_REQUESTS,
-        "contextWindow": max(4000, int(os.getenv("AGENT_CONTEXT_WINDOW", "65536"))),
+        "contextWindow": max(4000, int(os.getenv("AGENT_CONTEXT_WINDOW", "100000"))),
     }
 
 
@@ -123,7 +134,7 @@ async def decision(req: DecisionRequest):
             raise HTTPException(413, "Agent observation transport exceeds limit")
         from .context_engine import decide, VERSION
 
-        async def send_context(messages, max_tokens, purpose):
+        async def send_context(messages, purpose):
             started = time.monotonic()
             try:
                 async with app.state.semaphore:
@@ -136,7 +147,6 @@ async def decision(req: DecisionRequest):
                             "stream": False,
                             "thinking": {"type": "enabled" if purpose == "deep_reflection" else "disabled"},
                             "response_format": {"type": "json_object"},
-                            "max_tokens": max_tokens,
                         },
                         timeout=240.0 if purpose == "deep_reflection" else 45.0,
                     )
@@ -217,11 +227,6 @@ async def decision(req: DecisionRequest):
                     "stream": False,
                     "thinking": {"type": "disabled"},
                     "response_format": {"type": "json_object"},
-                    "max_tokens": 800
-                    if req.kind == "reflection"
-                    else 500
-                    if req.context.get("protocol") == "hybrid-1"
-                    else 400,
                 },
             )
         if response.status_code != 200:
@@ -320,7 +325,7 @@ def journal(folder: Path, name: str):
 
 @app.get("/api/experiments")
 def experiments():
-    result = storage.listing() if os.getenv("MYSQL_DATABASE") else []
+    result = list(storage.listing()) if os.getenv("MYSQL_DATABASE") else []
     known = {r["name"] for r in result}
     if ARTIFACTS.is_dir():
         for folder in ARTIFACTS.iterdir():
@@ -582,3 +587,11 @@ def import_context_archive(req: ContextArchiveRequest):
         return {"ok": True}
     except (ValueError, KeyError, TypeError) as e:
         raise HTTPException(409, str(e))
+
+
+@app.get("/api/experiments/{name}/decision-history")
+def experiment_decision_history(name: str, agent_id: int = Query(..., ge=1), through: int = Query(..., ge=0), before: int | None = Query(None, ge=1), limit: int = Query(20, ge=1, le=50), model_only: bool = False):
+    folder=experiment_dir(name)
+    if not (folder / 'storage.json').is_file():
+        raise HTTPException(409, '此实验须迁移到数据库后查询决策历史')
+    return storage.decision_history(name,agent_id,through,before,limit,model_only)

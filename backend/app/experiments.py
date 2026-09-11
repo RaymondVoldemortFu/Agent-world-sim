@@ -79,7 +79,7 @@ def status(folder: Path, world: dict | None = None) -> dict:
     current = re.search(
         r"RULES_VERSION = '([^']+)'", (ROOT / "frontend/src/sim/world.ts").read_text()
     )[1]
-    compatible = world.get("rulesVersion") == current or (
+    compatible = world.get("rulesVersion") == current or (world.get("rulesVersion") == "manor-1.0.0" and bool(world.get("manor"))) or (
         not world.get("ecology") and world.get("rulesVersion") == "mvp-1.7.0"
     )
     if not compatible and state == "paused":

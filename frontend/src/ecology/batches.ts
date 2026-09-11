@@ -44,6 +44,8 @@ export function put(to: Batch[], incoming: Batch[]) {
 export function take(from: Batch[], item: string, kg: number): Batch[] {
   if (!(kg > 0) || quantity(from, item) + 1e-7 < kg)
     throw Error(`缺少 ${ITEMS[item]?.name ?? item} (${kg.toFixed(2)} kg)`);
+  if (item === 'personal_ledger' && !Number.isInteger(kg))
+    throw Error('个人账簿只能整本转移，每本1kg');
   let left = kg;
   const out: Batch[] = [];
   for (const b of [...from].sort((a, b) => a.created - b.created)) {

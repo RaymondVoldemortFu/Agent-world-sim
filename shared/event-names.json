@@ -27,5 +27,19 @@
   "drop": "丢弃",
   "place": "放置",
   "wait": "等待",
-  "look": "观察"
+  "look": "观察",
+  "estate_work": "田间劳动",
+  "estate_give": "粮物交付",
+  "estate_tribute": "缴纳王税",
+  "estate_withdraw": "取出物资",
+  "estate_deposit": "存入物资",
+  "estate_craft": "工棚制作",
+  "estate_break_lock": "破门",
+  "estate_unlock": "开锁",
+  "estate_lock": "上锁",
+  "estate_guard": "驻守",
+  "estate_rest": "停工休息",
+  "estate_report_rebellion": "使者记录叛乱判断",
+  "estate_write_ledger": "写个人账簿",
+  "estate_show_ledger": "展示个人账簿"
 }

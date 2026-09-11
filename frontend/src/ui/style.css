@@ -2001,4 +2001,392 @@ footer {
   overflow-wrap: anywhere;
   padding-left: 20px;
 }
-.inscription-pagination { margin: 24px 0; justify-content: center; }
+.inscription-pagination {
+  margin: 24px 0;
+  justify-content: center;
+}
+
+/* Ravenbrook: an illustrated, isometric manor board. */
+.manor-dashboard {
+  background: #f0ebdc;
+  color: #2e4239;
+  border: 1px solid #b8b6a0;
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 12px 0;
+  font-family: system-ui, sans-serif;
+}
+.manor-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 30px;
+  background: #e7e2d0;
+  border-bottom: 1px solid #c9c8b2;
+}
+.manor-heading small,
+.manor-inspector > small {
+  letter-spacing: 2px;
+  color: #6e7b67;
+  font-size: 11px;
+}
+.manor-heading h2 {
+  font-family: Georgia, serif;
+  font-size: 30px;
+  margin: 9px 0;
+}
+.manor-heading p {
+  margin: 0;
+  color: #75816d;
+  font-size: 13px;
+}
+.manor-day {
+  text-align: right;
+  display: grid;
+}
+.manor-day strong {
+  font: 48px Georgia;
+  color: #486250;
+}
+.manor-day span {
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.manor-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  padding: 18px 24px;
+  gap: 15px;
+}
+.manor-kpis > div {
+  display: grid;
+  gap: 7px;
+  border-right: 1px solid #c9c8b2;
+}
+.manor-kpis small {
+  font-size: 11px;
+  color: #778371;
+}
+.manor-kpis strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+.manor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  border-top: 1px solid #c9c8b2;
+}
+.manor-map {
+  min-width: 0;
+  background: #1f3831;
+}
+.manor-map-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 14px;
+  color: #c7d0b3;
+  font-size: 11px;
+  background: #203b33;
+}
+.manor-map-tools button {
+  background: #345145;
+  color: #e2dfc4;
+  border: 1px solid #526553;
+  margin-left: 6px;
+  padding: 4px 9px;
+  border-radius: 5px;
+}
+.manor-canvas-wrap {
+  height: 620px;
+  position: relative;
+}
+.manor-canvas-wrap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+.manor-canvas-wrap canvas:active {
+  cursor: grabbing;
+}
+.manor-inspector {
+  padding: 22px;
+  overflow: auto;
+  max-height: 666px;
+  background: #e8e5d6;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.manor-inspector h3 {
+  font-size: 19px;
+  margin: 12px 0;
+}
+.manor-inspector h4 {
+  margin: 17px 0 8px;
+}
+.manor-inspector progress,
+.manor-stock-row progress {
+  accent-color: #678669;
+  width: 100%;
+  height: 7px;
+}
+.manor-chip {
+  display: inline-block;
+  margin: 3px;
+  padding: 2px 6px;
+  background: #d9decb;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.manor-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.manor-people button {
+  background: #dadfce;
+  color: #3b5948;
+  border: 1px solid #c0cbb5;
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.manor-people button.active {
+  background: #4d6c56;
+  color: #fff4d9;
+}
+.manor-muted {
+  color: #798574;
+  font-size: 12px;
+}
+.manor-memory {
+  font-size: 12px;
+  border-bottom: 1px solid #cdd0bd;
+  padding: 8px 0;
+  margin: 0;
+  line-height: 1.6;
+}
+.manor-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  padding: 24px 30px;
+}
+.manor-bottom h3 {
+  font-size: 16px;
+  margin: 0 0 9px;
+}
+.manor-stock-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 110px 1fr 85px;
+  gap: 14px;
+  align-items: center;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid #d4d5c3;
+  color: #465d4b;
+  text-align: left;
+  padding: 9px 0;
+  font-size: 12px;
+}
+.manor-stock-row b {
+  text-align: right;
+  font-weight: 500;
+}
+.manor-alert {
+  background: #e8d5b7;
+  color: #825633;
+  padding: 10px;
+  font-size: 12px;
+}
+@media (max-width: 1000px) {
+  .manor-layout {
+    grid-template-columns: 1fr;
+  }
+  .manor-inspector {
+    max-height: 360px;
+  }
+  .manor-kpis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .manor-bottom {
+    grid-template-columns: 1fr;
+  }
+  .manor-canvas-wrap {
+    height: 520px;
+  }
+}
+.manor-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+.manor-inspector-controls {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+.manor-inspector-controls label {
+  flex: 1;
+  min-width: 0;
+}
+.manor-inspector-controls select {
+  width: 100%;
+  background: #f5f0df;
+  color: #314a3b;
+  border: 1px solid #b6c0a8;
+  padding: 7px;
+  border-radius: 5px;
+}
+.manor-inspector button {
+  background: #d5ddc9;
+  color: #314c3a;
+  border: 1px solid #b2c0a5;
+  border-radius: 5px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.manor-panel-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0;
+}
+.manor-panel-tabs button.active {
+  background: #4f6f57;
+  color: #fff2d7;
+}
+.decision-history-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.decision-history-card {
+  border: 1px solid #c4cbb7;
+  border-radius: 6px;
+  background: #f0eddf;
+  margin: 9px 0;
+  padding: 10px;
+}
+.decision-history-card summary {
+  cursor: pointer;
+}
+.decision-history-card summary small {
+  display: block;
+  color: #688065;
+  font-size: 11px;
+}
+.decision-history-card summary span {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.6;
+}
+.decision-history-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #38543f;
+  background: #e2e7d7;
+  padding: 8px;
+  font-size: 11px;
+}
+.agent-decisions > button {
+  width: 100%;
+}
+@media (max-width: 1000px) {
+  .manor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Daily observer newspaper */
+.news-feed {
+  display: grid;
+  gap: 24px;
+  margin: 24px 0;
+}
+.news-article {
+  border: 1px solid var(--line, #39403a);
+  border-top: 3px solid #c9a476;
+  border-radius: 10px;
+  padding: clamp(20px, 4vw, 42px);
+  background: linear-gradient(135deg, rgba(201, 164, 118, 0.07), transparent 55%);
+}
+.news-article header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #65605255;
+}
+.news-edition {
+  font-size: 1.5rem;
+  font-family: Georgia, serif;
+  color: #c9a476;
+}
+.news-vitals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding: 14px 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+.news-copy {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.95;
+  font-size: 1rem;
+  max-width: 85ch;
+  margin: 14px auto 26px;
+}
+.news-article footer {
+  font-size: 0.78rem;
+  border-top: 1px solid #65605255;
+  padding-top: 16px;
+}
+
+.news-copy h3 {
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 1.65rem;
+  line-height: 1.55;
+  color: #ebe3ce;
+  margin-bottom: 24px;
+}
+.news-copy h4 {
+  font-size: 1.12rem;
+  color: #c9a476;
+  margin: 24px 0 10px;
+}
+.news-copy p {
+  margin: 0 0 16px;
+}
+.news-copy {
+  font-size: 14px;
+}
+
+.engine-choice {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.engine-choice select {
+  padding: 12px;
+}
+
+@media (max-width: 700px) {
+  .page-nav {
+    width: 100%;
+    max-width: 100%;
+    flex-shrink: 1;
+    flex-wrap: wrap;
+  }
+  .archive-list button {
+    flex-wrap: wrap;
+  }
+  .archive-list button > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}

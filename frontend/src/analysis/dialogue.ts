@@ -1,7 +1,11 @@
 import type { WorldEvent } from '../sim/types';
-export const VERSION = 'dialogue-rules-1';
+export const VERSION = 'dialogue-village-2';
 export const INTENTS = {
   request: '请求 / 求助',
+  accounting: '核账 / 交付确认',
+  negotiate: '协商 / 交易条件',
+  direct: '指令 / 催办催缴',
+  warning: '风险告警',
   cooperate: '协作 / 分工',
   offer: '承诺 / 提供',
   teach: '知识传授',
@@ -14,9 +18,16 @@ export const INTENTS = {
   other: '未分类',
 };
 export const TOPICS = {
-  survival: '食物 / 饮水',
+  survival: '进食 / 随身口粮',
+  reserves: '家庭储备 / 仓库存粮',
+  taxes: '税收 / 王室欠税',
+  authority: '权力 / 抗税与反抗',
+  security: '守卫 / 门禁与安全',
+  family: '家庭 / 邻里关系',
+  records: '账簿 / 公告与记录',
+  routine: '任务 / 自动日程',
   industry: '工具 / 加工',
-  farming: '农业',
+  farming: '耕作 / 收获与歉收',
   building: '建筑 / 仓储',
   logistics: '地点 / 搬运',
   health: '健康 / 情绪',
@@ -28,6 +39,16 @@ export type Intent = keyof typeof INTENTS;
 export type Topic = keyof typeof TOPICS;
 // Bounded phrases; evidence is shown verbatim. These labels describe linguistic cues.
 const intentRules: Record<Exclude<Intent, 'other'>, RegExp[]> = {
+  accounting: [
+    /核账|对账|核对|账目|实收|实付|清点|签收|收据|结清|尚未收到|没有收到|未到账|交付确认/g,
+    /(?:收到|交付|交接|领取|入库|出库).{0,10}\d+(?:\.\d+)?\s*(?:kg|公斤|斤|份)/g,
+  ],
+  negotiate: [
+    /协商|商量|交换条件|讨价|交易|交换|减税|免税|宽限|延期|缓缴|通融/g,
+    /如果.{0,30}(?:就|才)|只要.{0,25}就/g,
+  ],
+  direct: [/命令|必须|务必|立刻|立即|限你|限期|催缴|催办|上缴|不得拖欠|不许拖欠/g],
+  warning: [/警告|危险|告警|小心|当心|救命|快逃|敌袭|断粮|饿死|饥荒|濒死|生命危险/g],
   request: [
     /请(?:你|帮|给|来|带|教|把|借)/g,
     /帮(?:我|忙|一下)/g,
@@ -68,20 +89,31 @@ const intentRules: Record<Exclude<Intent, 'other'>, RegExp[]> = {
   bond: [/谢谢|感谢|你好|朋友|伙伴|辛苦|照顾|照料|陪你|陪我|担心你|别怕|保重|对不起|抱歉/g],
 };
 const topicRules: Record<Exclude<Topic, 'other'>, RegExp[]> = {
+  reserves: [
+    /家庭储备|家庭储藏|家里.{0,4}粮|家中.{0,4}粮|粮箱|粮仓|仓库|公仓|存粮|库存|储粮|储备|入库|出库|补粮/g,
+  ],
+  taxes: [/税|王室|欠缴|欠款|拖欠|催缴|宽限|贡粮/g],
+  authority: [/领主|国王|村长|使者|王军|王室|军队|抗税|造反|叛乱|反抗|暴政|统治|镇压/g],
+  security: [
+    /门禁|大门|庄园门|城门|门锁|钥匙|开门|关门|护卫|守卫|卫兵|巡逻|押送|武器|盔甲|野兽|熊|敌袭|逃跑/g,
+  ],
+  family: [/家庭|家人|一家|妻子|丈夫|父亲|母亲|孩子|邻居|邻里|亲属/g],
+  records: [/账簿|账本|账目|记账|记下|记录|登记|铭文|刻字|公告|告示|收据|签收/g],
+  routine: [/自动|日程|例行|计划|任务|routine|navigation|arrived|补给目标|停留|驻留/g],
   survival: [
-    /食物|口粮|饥饿|吃|饮水|喝|水源|果|坚果|根茎|鱼|肉|\b(?:food|nuts|berries|roots|fish|meat|water)\b/g,
+    /食物|口粮|粮食|谷物|饱食度|饥饿|饿|吃|饮水|喝|水源|果|坚果|根茎|鱼|肉|\b(?:food|nuts|berries|roots|fish|meat|water)\b/g,
   ],
   industry: [
     /木|石片|石斧|绳|工具|骨针|纤维|纺|织|陶|炭|矿|铜|锡|铁|炉|\b(?:wood|cord|fiber|flake|pot|ore|charcoal|basket)\b/g,
   ],
   farming: [
-    /农|田|种子|播种|耕|谷|收割|秋种|春种|灌溉|施肥|\b(?:farming|grain|winter_grain|field|pulses|flax)\b/g,
+    /农|田|种子|播种|耕|收割|收获|歉收|减产|秋种|春种|灌溉|施肥|\b(?:farming|field|pulses|flax)\b/g,
   ],
   building: [
     /建造|建筑|房|棚|粮仓|仓储|储存|工棚|屋|桥|码头|\b(?:build|granary|shelter|storage)\b/g,
   ],
   logistics: [
-    /搬运|搬来|带来|送到|运到|会合|汇合|迁居|河谷|铜山|锡岭|坐标|\(\d{1,2}\s*[,，]\s*\d{1,2}\)/g,
+    /搬运|搬来|带来|送到|运到|交付|交接|领取|取粮|导航|路线|抵达|到达|会合|汇合|迁居|河谷|铜山|锡岭|坐标|\(\d{1,2}\s*[,，]\s*\d{1,2}\)/g,
   ],
   health: [/孤单|抑郁|受伤|中毒|生病|血量|生命|难受|疼|照料|照顾|健康|冷|保暖/g],
   reproduction: [/繁衍|交配|受孕|怀孕|妊娠|后代|生育|孩子|伴侣/g],
@@ -152,9 +184,12 @@ export function classify(s: Speech): ClassifiedSpeech {
     topics: Topic[] = hits(topicRules, 'topic');
   if (!intents.length) intents.push('other');
   if (!topics.length) topics.push('other');
-  const primary = [...intents].sort(
-    (a, b) => (evidence[`intent:${b}`]?.length ?? 0) - (evidence[`intent:${a}`]?.length ?? 0),
-  )[0];
+  const primary = [...intents].sort((a, b) => {
+    const score = (id: Intent) =>
+      (evidence[`intent:${id}`]?.length ?? 0) +
+      (['accounting', 'negotiate', 'direct', 'warning'].includes(id) ? 10 : 0);
+    return score(b) - score(a);
+  })[0];
   return {
     ...s,
     body,
@@ -204,7 +239,15 @@ export function summarize(rows: ClassifiedSpeech[]) {
   const pairs = new Map<string, { from: number; to: number; count: number }>(),
     days = new Map<
       number,
-      { day: number; total: number; cooperate: number; teach: number; conflict: number }
+      {
+        day: number;
+        total: number;
+        cooperate: number;
+        teach: number;
+        accounting: number;
+        warning: number;
+        conflict: number;
+      }
     >();
   const speakers = new Map<number, number>();
   for (const r of rows) {
@@ -215,16 +258,33 @@ export function summarize(rows: ClassifiedSpeech[]) {
       pair.count++;
       pairs.set(key, pair);
     }
-    const day = days.get(r.day) ?? { day: r.day, total: 0, cooperate: 0, teach: 0, conflict: 0 };
+    const day = days.get(r.day) ?? {
+      day: r.day,
+      total: 0,
+      cooperate: 0,
+      teach: 0,
+      accounting: 0,
+      warning: 0,
+      conflict: 0,
+    };
     day.total++;
-    for (const intent of ['cooperate', 'teach', 'conflict'] as const)
+    for (const intent of ['cooperate', 'teach', 'accounting', 'warning', 'conflict'] as const)
       if (r.intents.includes(intent)) day[intent]++;
     days.set(r.day, day);
   }
   const timeline = [...days.values()].sort((a, b) => a.day - b.day);
   if (timeline.length)
     for (let day = timeline[0].day; day <= timeline.at(-1)!.day; day++)
-      if (!days.has(day)) days.set(day, { day, total: 0, cooperate: 0, teach: 0, conflict: 0 });
+      if (!days.has(day))
+        days.set(day, {
+          day,
+          total: 0,
+          cooperate: 0,
+          teach: 0,
+          accounting: 0,
+          warning: 0,
+          conflict: 0,
+        });
   return {
     total: rows.length,
     speakers: [...speakers].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count),

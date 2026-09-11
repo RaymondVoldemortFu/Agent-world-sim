@@ -1,9 +1,15 @@
+import { lazy, Suspense } from 'react';
+import { CONTINUOUS_DEFAULTS, ContinuousConfigSchema } from '../continuous/config';
+import { ContinuousFields } from '../continuous/ConfigPanel';
+const ContinuousPage = lazy(() => import('../continuous/Page'));
+import { MANOR_CONFIG, MANOR_DEFAULTS } from '../manor/world';
 import ContextTrace from './ContextTrace';
 import EcoDashboard from './EcoDashboard';
 import StatisticsPage from './StatisticsPage';
 import DialoguePage from './DialoguePage';
 import ExperiencesPage from './ExperiencesPage';
 import InscriptionsPage from './InscriptionsPage';
+import NewsPage from './NewsPage';
 import { useChronicle } from './useChronicle';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -123,6 +129,22 @@ function Meter({
   );
 }
 export default function App() {
+  const [continuous] = useState(() => {
+    const q = new URLSearchParams(location.search);
+    return (
+      q.get('engine') === 'continuous' ||
+      q.get('page') === 'continuous' ||
+      !!q.get('run')?.startsWith('continuous-')
+    );
+  });
+  const [newEngine, setNewEngine] = useState<'discrete' | 'continuous'>(
+    continuous ? 'continuous' : 'discrete',
+  );
+  const [continuousDraft, setContinuousDraft] = useState({ ...CONTINUOUS_DEFAULTS });
+  const [continuousArchives, setContinuousArchives] = useState<{ id: string; sim_time: number }[]>(
+    [],
+  );
+
   const worker = useRef<Worker | null>(null),
     file = useRef<HTMLInputElement>(null);
   const [world, setWorld] = useState<World>(),
@@ -144,19 +166,19 @@ export default function App() {
     [settings, setSettings] = useState(false),
     [config, setConfig] = useState<Config>({
       ...DEFAULT_CONFIG,
-      worldModel: 'ecology',
-      controller: 'hybrid',
+      ...MANOR_CONFIG,
     }),
     [decision, setDecision] = useState<DecisionRecord>();
   const [page, setPage] = useState<
-    'world' | 'config' | 'statistics' | 'experiences' | 'dialogue' | 'inscriptions'
+    'world' | 'config' | 'statistics' | 'experiences' | 'dialogue' | 'inscriptions' | 'news'
   >(() => {
     const value = new URLSearchParams(location.search).get('page');
     return value === 'config' ||
       value === 'statistics' ||
       value === 'experiences' ||
       value === 'dialogue' ||
-      value === 'inscriptions'
+      value === 'inscriptions' ||
+      value === 'news'
       ? value
       : 'world';
   });
@@ -164,13 +186,17 @@ export default function App() {
   const [replaySeq, setReplaySeq] = useState(0);
   const [replayTarget, setReplayTarget] = useState<number>();
   const [serverReplay, setServerReplay] = useState(false);
-  const [externalName, setExternalName] = useState<string | undefined>(
-    () => new URLSearchParams(location.search).get('experiment') ?? undefined,
+  const [externalName, setExternalName] = useState<string | undefined>(() =>
+    continuous ? undefined : (new URLSearchParams(location.search).get('experiment') ?? undefined),
   );
   const { events, eventsLoading, eventsError, hasMoreEvents, loadMoreEvents, refreshEvents } =
     useChronicle(world, history?.seq, externalName, query, eventType, page === 'world');
   useEffect(() => {
     const url = new URL(location.href);
+    if (continuous) {
+      url.searchParams.set('engine', 'continuous');
+      url.searchParams.delete('experiment');
+    }
     if (page === 'world') url.searchParams.delete('page');
     else url.searchParams.set('page', page);
     if (page === 'experiences' && agentId) url.searchParams.set('agent', String(agentId));
@@ -196,6 +222,11 @@ export default function App() {
     }[]
   >([]);
   const selectSource = (name?: string, restore = true) => {
+    if (continuous) {
+      location.assign(name ? `/?experiment=${encodeURIComponent(name)}` : '/');
+      return;
+    }
+
     setReplayTarget(undefined);
     setServerReplay(false);
     external.current = name;
@@ -244,9 +275,30 @@ export default function App() {
   };
   const startExperiment = async () => {
     if (controlBusy) return;
+    if (newEngine === 'continuous') {
+      const parsed = ContinuousConfigSchema.safeParse(continuousDraft);
+      if (!parsed.success) {
+        setError(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('；'));
+        return;
+      }
+      setControlBusy(true);
+      setError('');
+      try {
+        const data = await controlRequest('/continuous-api/runs', {
+          mode: newMode,
+          config: parsed.data,
+        });
+        location.assign(`/?engine=continuous&run=${encodeURIComponent(data.id)}`);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setControlBusy(false);
+      }
+      return;
+    }
     const parsed = ConfigSchema.safeParse({
       ...config,
-      contextWindow: config.contextWindow ?? contextWindow ?? 65536,
+      contextWindow: config.contextWindow ?? contextWindow ?? 100000,
     });
     if (!parsed.success) {
       setError(
@@ -274,6 +326,14 @@ export default function App() {
     }
   };
   useEffect(() => {
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((c) => {
+        setModel(c.configured ? c.model : '密钥未配置');
+        setContextWindow(c.contextWindow);
+      })
+      .catch(() => setModel('后端未连接'));
+    if (continuous) return;
     const w = new Worker(new URL('../runtime/worker.ts', import.meta.url), { type: 'module' });
     worker.current = w;
     w.onmessage = ({ data }) => {
@@ -297,13 +357,6 @@ export default function App() {
       }
     };
     w.postMessage({ type: 'restore' });
-    fetch('/api/config')
-      .then((r) => r.json())
-      .then((c) => {
-        setModel(c.configured ? c.model : '密钥未配置');
-        setContextWindow(c.contextWindow);
-      })
-      .catch(() => setModel('后端未连接'));
     return () => {
       w.terminate();
       worker.current = null;
@@ -346,11 +399,19 @@ export default function App() {
     };
   }, [externalName]);
   useEffect(() => {
-    if (archiveOpen)
+    if (archiveOpen) {
+      fetch('/continuous-api/runs')
+        .then((r) => {
+          if (!r.ok) throw Error();
+          return r.json();
+        })
+        .then(setContinuousArchives)
+        .catch(() => setError('无法读取连续实验档案'));
       fetch('/api/experiments')
         .then((r) => r.json())
         .then(setArchives)
         .catch(() => setError('无法读取实验档案'));
+    }
   }, [archiveOpen]);
   useEffect(() => {
     if (!externalName || replayTarget === undefined) return;
@@ -418,10 +479,16 @@ export default function App() {
         </div>
         <div className="header-center">
           <span className="live-dot" /> 自主演化实验 <span className="divider">/</span>{' '}
-          {displayed?.ecology ? 'ECO 02' : 'MVP 01'}
+          {continuous ? '连续村庄' : displayed?.ecology ? 'ECO 02' : 'MVP 01'}
         </div>
         <div className="header-actions">
           <nav className="page-nav" aria-label="页面导航">
+            <a
+              href={continuous ? '/' : '/?engine=continuous'}
+              style={{ padding: '8px 12px', color: 'inherit' }}
+            >
+              {continuous ? '离散实验 ↗' : '连续世界 ↗'}
+            </a>
             <button
               aria-current={page === 'world' ? 'page' : undefined}
               onClick={() => setPage('world')}
@@ -441,6 +508,8 @@ export default function App() {
               统计数据
             </button>
             <button
+              disabled={continuous}
+              title={continuous ? '连续原型尚未接入此页' : undefined}
               aria-current={page === 'experiences' ? 'page' : undefined}
               onClick={() => setPage('experiences')}
             >
@@ -453,10 +522,20 @@ export default function App() {
               对话分析
             </button>
             <button
+              disabled={continuous}
+              title={continuous ? '连续原型尚未接入此页' : undefined}
               aria-current={page === 'inscriptions' ? 'page' : undefined}
               onClick={() => setPage('inscriptions')}
             >
               铭文
+            </button>
+            <button
+              disabled={continuous}
+              title={continuous ? '连续原型尚未接入此页' : undefined}
+              aria-current={page === 'news' ? 'page' : undefined}
+              onClick={() => setPage('news')}
+            >
+              当日新闻
             </button>
           </nav>
           <button
@@ -486,7 +565,21 @@ export default function App() {
           </div>
         )}
 
-        {page === 'inscriptions' ? (
+        {continuous ? (
+          <Suspense fallback={<p>正在加载连续世界…</p>}>
+            <ContinuousPage
+              page={page}
+              model={model}
+              onCreate={() => {
+                setNewEngine('continuous');
+                setSettings(true);
+              }}
+              onPage={setPage}
+            />
+          </Suspense>
+        ) : page === 'news' ? (
+          <NewsPage world={displayed} historical={!!history} externalName={externalName} />
+        ) : page === 'inscriptions' ? (
           <InscriptionsPage world={displayed} historical={!!history} />
         ) : page === 'dialogue' ? (
           <DialoguePage
@@ -598,7 +691,15 @@ export default function App() {
                 </p>
               </div>
             </section>
-            {displayed?.ecology && <EcoDashboard world={displayed} layer={layer} />}
+            {displayed?.ecology && (
+              <EcoDashboard
+                world={displayed}
+                layer={layer}
+                externalName={externalName}
+                historical={!!history}
+                onInspect={(id) => inspect({ decisionId: id })}
+              />
+            )}
             <section
               className="workspace"
               style={displayed?.ecology ? { display: 'block' } : undefined}
@@ -1285,6 +1386,20 @@ export default function App() {
             <h2>每个世界，都留下痕迹。</h2>
             <p className="muted">查看本地实验进度与记录。导出后可导入浏览器进行完整回放。</p>
             <div className="archive-list">
+              {continuousArchives.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() =>
+                    location.assign(`/?engine=continuous&run=${encodeURIComponent(r.id)}`)
+                  }
+                >
+                  <span>
+                    <b>{r.id}</b>
+                    <small>连续村庄 · 5 位初始居民 · 轨迹回放</small>
+                  </span>
+                  <span>第 {Math.floor(r.sim_time / 86400000) + 1} 天 ↗</span>
+                </button>
+              ))}
               {archives.map((r) => (
                 <button
                   key={r.name}
@@ -1305,7 +1420,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-            {!archives.length && (
+            {!archives.length && !continuousArchives.length && (
               <p className="note">暂无本地实验记录。可以先生成一个世界开始观察。</p>
             )}
           </div>
@@ -1405,225 +1520,300 @@ export default function App() {
                 {error}
               </p>
             )}
-            <div className="settings-grid">
-              {(
-                [
-                  ['size', '地图边长'],
-                  ['plainFoodCapacity', '平原食物上限'],
-                  ['plainRecoveryDays', '平原采集恢复等待（天）'],
-                  ['foodShelfLifeDays', '采后保鲜期（天）'],
-                  ['inventoryCapacity', '背包容量'],
-                  ['spoiledFoodDamage', '每份腐败食物伤害'],
-                  ['spoiledFoodHungerGain', '每份腐败食物饱食度恢复'],
-                  ['seed', '世界种子'],
-                  ['population', '初始居民'],
-                  ['days', '实验天数'],
-                  ['dailyAP', '每日行动点'],
-                  ...(config.worldModel === 'ecology'
-                    ? ([
-                        ['regions', '区域数量'],
-                        ['llmDailyTokens', '每人每日 Token 准入阈值'],
-                        ['contextWindow', '下次实验上下文窗口（tokens）'],
-                      ] as [keyof Config, string][])
-                    : []),
-                  ['maxCalls', '调用次数上限'],
-                  ['maxTokens', 'Token 上限'],
-                  ['populationLimit', '人口暂停阈值'],
-                  ['gestation', '妊娠天数'],
-                  ['adultAge', '成年年龄（天）'],
-                  ['maxMinutes', '时长上限（分钟）'],
-                  ['maxCost', '费用上限（0 为关闭）'],
-                  ['inputPrice', '输入价 / 百万 tokens'],
-                  ['outputPrice', '输出价 / 百万 tokens'],
-                  ['cachePrice', '缓存命中价 / 百万 tokens'],
-                ] as [keyof Config, string][]
-              )
-                .filter(
-                  ([k]) =>
-                    config.worldModel !== 'ecology' ||
-                    ![
-                      'plainFoodCapacity',
-                      'plainRecoveryDays',
-                      'foodShelfLifeDays',
-                      'spoiledFoodDamage',
-                      'spoiledFoodHungerGain',
-                      'gestation',
-                      'adultAge',
-                    ].includes(k),
-                )
-                .map(([k, label]) => (
-                  <label key={k}>
-                    {label}
-                    <input
-                      type="number"
-                      min={k === 'size' ? 10 : k === 'contextWindow' ? 4000 : undefined}
-                      max={k === 'size' ? 64 : k === 'contextWindow' ? 262144 : undefined}
-                      value={
-                        (config[k] ??
-                          (k === 'contextWindow' ? (contextWindow ?? 65536) : undefined)) as number
-                      }
-                      onChange={(e) => setConfig((c) => ({ ...c, [k]: Number(e.target.value) }))}
-                    />
-                  </label>
-                ))}
-              <label>
-                世界规则
-                <select
-                  value={config.worldModel}
-                  onChange={(e) =>
-                    setConfig({ ...config, worldModel: e.target.value as Config['worldModel'] })
-                  }
-                >
-                  <option value="ecology">生态产业 / 混合 Agent</option>
-                  <option value="legacy">历史简化规则</option>
-                </select>
-              </label>
-              {config.worldModel === 'ecology' && (
-                <label>
-                  野兽与聚居地袭击
-                  <input
-                    type="checkbox"
-                    checked={config.wildlifeEnabled !== false}
-                    onChange={(e) => setConfig({ ...config, wildlifeEnabled: e.target.checked })}
-                  />
-                </label>
-              )}
-              {config.worldModel === 'ecology' && (
-                <>
+            <label className="engine-choice">
+              执行模式
+              <select
+                aria-label="执行模式"
+                value={newEngine}
+                onChange={(e) => setNewEngine(e.target.value as typeof newEngine)}
+              >
+                <option value="discrete">离散领地 / 生态实验</option>
+                <option value="continuous">连续村庄 · 2.5D</option>
+              </select>
+            </label>
+            {newEngine === 'continuous' ? (
+              <ContinuousFields
+                value={continuousDraft}
+                onChange={setContinuousDraft}
+                mode={newMode}
+                onMode={setNewMode}
+              />
+            ) : (
+              <>
+                <div className="settings-grid">
+                  {(
+                    [
+                      ['size', '地图边长'],
+                      ['plainFoodCapacity', '平原食物上限'],
+                      ['plainRecoveryDays', '平原采集恢复等待（天）'],
+                      ['foodShelfLifeDays', '采后保鲜期（天）'],
+                      ['inventoryCapacity', '背包容量'],
+                      ['spoiledFoodDamage', '每份腐败食物伤害'],
+                      ['spoiledFoodHungerGain', '每份腐败食物饱食度恢复'],
+                      ['seed', '世界种子'],
+                      ['population', '初始居民'],
+                      ['days', '实验天数'],
+                      ['dailyAP', '每日行动点'],
+                      ...(config.worldModel === 'ecology'
+                        ? ([
+                            ['regions', '区域数量'],
+                            ['llmDailyTokens', '每人每日 Token 准入阈值'],
+                            ['contextWindow', '下次实验上下文窗口（tokens）'],
+                          ] as [keyof Config, string][])
+                        : []),
+                      ['maxCalls', '调用次数上限'],
+                      ['maxTokens', 'Token 上限'],
+                      ['populationLimit', '人口暂停阈值'],
+                      ['gestation', '妊娠天数'],
+                      ['adultAge', '成年年龄（天）'],
+                      ['maxMinutes', '时长上限（分钟）'],
+                      ['maxCost', '费用上限（0 为关闭）'],
+                      ['inputPrice', '输入价 / 百万 tokens'],
+                      ['outputPrice', '输出价 / 百万 tokens'],
+                      ['cachePrice', '缓存命中价 / 百万 tokens'],
+                    ] as [keyof Config, string][]
+                  )
+                    .filter(
+                      ([k]) =>
+                        !(
+                          config.ecoPreset === 'manor' &&
+                          ['size', 'population', 'regions', 'populationLimit'].includes(k)
+                        ) &&
+                        (config.worldModel !== 'ecology' ||
+                          ![
+                            'plainFoodCapacity',
+                            'plainRecoveryDays',
+                            'foodShelfLifeDays',
+                            'spoiledFoodDamage',
+                            'spoiledFoodHungerGain',
+                            'gestation',
+                            'adultAge',
+                          ].includes(k)),
+                    )
+                    .map(([k, label]) => (
+                      <label key={k}>
+                        {label}
+                        <input
+                          type="number"
+                          min={k === 'size' ? 10 : k === 'contextWindow' ? 4000 : undefined}
+                          max={k === 'size' ? 64 : k === 'contextWindow' ? 262144 : undefined}
+                          value={
+                            (config[k] ??
+                              (k === 'contextWindow'
+                                ? (contextWindow ?? 100000)
+                                : undefined)) as number
+                          }
+                          onChange={(e) =>
+                            setConfig((c) => ({ ...c, [k]: Number(e.target.value) }))
+                          }
+                        />
+                      </label>
+                    ))}
                   <label>
-                    野兽死亡后刷新冷却（天）
+                    世界规则
+                    <select
+                      value={config.worldModel}
+                      onChange={(e) =>
+                        setConfig({ ...config, worldModel: e.target.value as Config['worldModel'] })
+                      }
+                    >
+                      <option value="ecology">生态产业 / 混合 Agent</option>
+                      <option value="legacy">历史简化规则</option>
+                    </select>
+                  </label>
+                  {config.worldModel === 'ecology' && (
+                    <label>
+                      野兽与聚居地袭击
+                      <input
+                        type="checkbox"
+                        checked={config.wildlifeEnabled !== false}
+                        onChange={(e) =>
+                          setConfig({ ...config, wildlifeEnabled: e.target.checked })
+                        }
+                      />
+                    </label>
+                  )}
+                  {config.worldModel === 'ecology' && (
+                    <>
+                      <label>
+                        野兽死亡后刷新冷却（天）
+                        <input
+                          type="number"
+                          min={0}
+                          max={365}
+                          step={1}
+                          value={config.beastRespawnDays ?? 10}
+                          onChange={(e) =>
+                            setConfig({ ...config, beastRespawnDays: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        野兽战斗力倍率
+                        <input
+                          type="number"
+                          min={0.1}
+                          max={5}
+                          step={0.1}
+                          value={config.beastPowerMultiplier ?? 1}
+                          onChange={(e) =>
+                            setConfig({ ...config, beastPowerMultiplier: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                      <p>
+                        同一区域有野兽被击败后，冷却期间不刷新新野兽；到期后按每5天的刷新节奏补充。倍率同时缩放野兽生命、攻击和回血，0.5表示减半。
+                      </p>
+                    </>
+                  )}
+                  <label>
+                    生态开局
+                    <select
+                      aria-label="生态开局"
+                      value={config.ecoPreset}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          ecoPreset: e.target.value as Config['ecoPreset'],
+                          ...(e.target.value === 'village' ? { spawn: 'compact' as const } : {}),
+                          ...(e.target.value === 'manor' ? MANOR_CONFIG : {}),
+                        })
+                      }
+                    >
+                      <option value="forager">采集者（先知 + 初始口粮）</option>
+                      <option value="settlement">农业定居（实物种粮 / 畜群 / 仓库）</option>
+                      <option value="village">初始村落（集中居住 / 农田 / 农具 / 储粮）</option>
+                      <option value="manor">中世纪鸦溪领地（31人 / 家庭 / 广场 / 王税）</option>
+                    </select>
+                  </label>
+                  {config.ecoPreset === 'manor' && (
+                    <>
+                      <p>
+                        固定24×24地图、31名居民、48条田，每30天收获；生产按劳动完成比例结算。税率是提示词中的惯例，实物交付由角色决定。
+                      </p>
+                      {(
+                        [
+                          ['taxRate', '地租比例', 0, 1, 0.05],
+                          ['royalTax', '每月王税（人日粮）', 0, 5000, 10],
+                          ['shockDay', '作物减产日（0关闭）', 0, 1000, 1],
+                          ['yieldMultiplier', '灾后产量倍率', 0, 2, 0.1],
+                          ['graceDays', '拖欠时间限制（天）', 1, 60, 1],
+                          ['armySize', '王军人数', 1, 30, 1],
+                        ] as const
+                      ).map(([key, label, min, max, step]) => (
+                        <label key={key}>
+                          {label}
+                          <input
+                            aria-label={label}
+                            type="number"
+                            min={min}
+                            max={max}
+                            step={step}
+                            value={(config.manorSettings ?? MANOR_DEFAULTS)[key]}
+                            onChange={(e) =>
+                              setConfig({
+                                ...config,
+                                manorSettings: {
+                                  ...MANOR_DEFAULTS,
+                                  ...config.manorSettings,
+                                  [key]: Number(e.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                    </>
+                  )}
+                  <label>
+                    开始年内日
                     <input
                       type="number"
-                      min={0}
-                      max={365}
-                      step={1}
-                      value={config.beastRespawnDays ?? 10}
+                      min="1"
+                      max="365"
+                      value={config.startDay}
+                      onChange={(e) => setConfig({ ...config, startDay: Number(e.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    每人每日模型请求上限
+                    <input
+                      type="number"
+                      min="0"
+                      max="3"
+                      value={config.llmDailyCalls}
                       onChange={(e) =>
-                        setConfig({ ...config, beastRespawnDays: Number(e.target.value) })
+                        setConfig({ ...config, llmDailyCalls: Number(e.target.value) })
                       }
                     />
                   </label>
                   <label>
-                    野兽战斗力倍率
-                    <input
-                      type="number"
-                      min={0.1}
-                      max={5}
-                      step={0.1}
-                      value={config.beastPowerMultiplier ?? 1}
-                      onChange={(e) =>
-                        setConfig({ ...config, beastPowerMultiplier: Number(e.target.value) })
-                      }
-                    />
+                    运行模式
+                    <select
+                      aria-label="运行模式"
+                      value={newMode}
+                      onChange={(e) => setNewMode(e.target.value as 'llm' | 'scripted')}
+                    >
+                      <option value="llm">LLM 自主演化</option>
+                      <option value="scripted">脚本基线</option>
+                    </select>
                   </label>
-                  <p>
-                    同一区域有野兽被击败后，冷却期间不刷新新野兽；到期后按每5天的刷新节奏补充。倍率同时缩放野兽生命、攻击和回血，0.5表示减半。
-                  </p>
-                </>
-              )}
-              <label>
-                生态开局
-                <select
-                  aria-label="生态开局"
-                  value={config.ecoPreset}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      ecoPreset: e.target.value as Config['ecoPreset'],
-                      ...(e.target.value === 'village' ? { spawn: 'compact' as const } : {}),
-                    })
-                  }
-                >
-                  <option value="forager">采集者（先知 + 初始口粮）</option>
-                  <option value="settlement">农业定居（实物种粮 / 畜群 / 仓库）</option>
-                  <option value="village">初始村落（集中居住 / 农田 / 农具 / 储粮）</option>
-                </select>
-              </label>
-              <label>
-                开始年内日
-                <input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={config.startDay}
-                  onChange={(e) => setConfig({ ...config, startDay: Number(e.target.value) })}
-                />
-              </label>
-              <label>
-                每人每日模型请求上限
-                <input
-                  type="number"
-                  min="0"
-                  max="3"
-                  value={config.llmDailyCalls}
-                  onChange={(e) => setConfig({ ...config, llmDailyCalls: Number(e.target.value) })}
-                />
-              </label>
-              <label>
-                运行模式
-                <select
-                  aria-label="运行模式"
-                  value={newMode}
-                  onChange={(e) => setNewMode(e.target.value as 'llm' | 'scripted')}
-                >
-                  <option value="llm">LLM 自主演化</option>
-                  <option value="scripted">脚本基线</option>
-                </select>
-              </label>
-              <label>
-                后台并发上限
-                <select
-                  aria-label="后台并发上限"
-                  value={newConcurrency}
-                  onChange={(e) => setNewConcurrency(Number(e.target.value))}
-                >
-                  {[1, 2, 4, 6, 8].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                出生分布
-                <select
-                  aria-label="出生分布"
-                  value={config.spawn}
-                  disabled={config.worldModel === 'ecology' && config.ecoPreset === 'village'}
-                  onChange={(e) =>
-                    setConfig((c) => ({ ...c, spawn: e.target.value as Config['spawn'] }))
-                  }
-                >
-                  <option value="clusters">分区随机</option>
-                  <option value="uniform">全图均匀随机</option>
-                  <option value="compact">扎堆出现（同一区域 2×2 四格）</option>
-                </select>
-              </label>
-            </div>
-            <div className="note">
-              {config.worldModel === 'ecology' ? (
-                <>
-                  按初始人口计算，模型请求上限约{' '}
-                  {fmt(
-                    Math.min(
-                      config.maxCalls,
-                      config.population * config.days * config.llmDailyCalls,
-                    ),
-                  )}{' '}
-                  次（含重试）；日常规则动作不调用模型。每格 6.25 ha，背包按 kg
-                  计，食物按种类与储藏条件损耗；成年 16 岁、妊娠 280 天。
-                </>
-              ) : (
-                <>
-                  按初始人口估计，约{' '}
-                  {fmt(
-                    config.population *
-                      (config.days * config.dailyAP + Math.floor(config.days / 5)),
-                  )}{' '}
-                  次常规决策与反思；免费丢弃、重试和新增人口会增加调用。
-                </>
-              )}
-            </div>
+                  <label>
+                    后台并发上限
+                    <select
+                      aria-label="后台并发上限"
+                      value={newConcurrency}
+                      onChange={(e) => setNewConcurrency(Number(e.target.value))}
+                    >
+                      {[1, 2, 4, 6, 8].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    出生分布
+                    <select
+                      aria-label="出生分布"
+                      value={config.spawn}
+                      disabled={config.worldModel === 'ecology' && config.ecoPreset === 'village'}
+                      onChange={(e) =>
+                        setConfig((c) => ({ ...c, spawn: e.target.value as Config['spawn'] }))
+                      }
+                    >
+                      <option value="clusters">分区随机</option>
+                      <option value="uniform">全图均匀随机</option>
+                      <option value="compact">扎堆出现（同一区域 2×2 四格）</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="note">
+                  {config.worldModel === 'ecology' ? (
+                    <>
+                      按初始人口计算，模型请求上限约{' '}
+                      {fmt(
+                        Math.min(
+                          config.maxCalls,
+                          config.population * config.days * config.llmDailyCalls,
+                        ),
+                      )}{' '}
+                      次（含重试）；日常规则动作不调用模型。每格 6.25 ha，背包按 kg
+                      计，食物按种类与储藏条件损耗；成年 16 岁、妊娠 280 天。
+                    </>
+                  ) : (
+                    <>
+                      按初始人口估计，约{' '}
+                      {fmt(
+                        config.population *
+                          (config.days * config.dailyAP + Math.floor(config.days / 5)),
+                      )}{' '}
+                      次常规决策与反思；免费丢弃、重试和新增人口会增加调用。
+                    </>
+                  )}
+                </div>
+              </>
+            )}
             <button
               className="primary"
               disabled={controlBusy || (running && !externalName)}
@@ -1632,13 +1822,14 @@ export default function App() {
               {controlBusy ? '正在启动…' : '启动后台实验 ↗'}
             </button>
             <button
+              hidden={newEngine === 'continuous' || continuous}
               disabled={running || controlBusy}
               onClick={() => {
                 selectSource(undefined, false);
                 send('create', {
                   config: {
                     ...config,
-                    contextWindow: config.contextWindow ?? contextWindow ?? 65536,
+                    contextWindow: config.contextWindow ?? contextWindow ?? 100000,
                   },
                 });
                 setAgentId(undefined);

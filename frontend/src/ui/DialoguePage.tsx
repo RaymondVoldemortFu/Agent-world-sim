@@ -9,7 +9,7 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-import type { World } from '../sim/types';
+
 import {
   INTENTS,
   TOPICS,
@@ -150,10 +150,12 @@ function HearingMap({
 export default function DialoguePage({
   world: w,
   externalName,
+  continuousName,
   historical,
   onInspect,
 }: {
-  world?: World;
+  world?: { id: string; seq: number; agents: { id: number; name: string; death?: unknown }[] };
+  continuousName?: string;
   externalName?: string;
   historical: boolean;
   onInspect: (id: string) => Promise<boolean>;
@@ -251,6 +253,7 @@ export default function DialoguePage({
     instance.postMessage({
       type: 'load',
       external: externalName,
+      continuous: continuousName,
       runId: world.id,
       through: world.seq,
     });
@@ -258,14 +261,14 @@ export default function DialoguePage({
       instance.terminate();
       worker.current = null;
     };
-  }, [w?.id, externalName, revision, historicalSeq]);
+  }, [w?.id, externalName, continuousName, revision, historicalSeq]);
   useEffect(() => {
     if (!worker.current || !valid) return;
     request.current++;
     setLoading(true);
     setError('');
     worker.current.postMessage({ type: 'query', requestId: request.current, filters, offset });
-  }, [filters, offset, valid, w?.id, externalName, revision, historicalSeq]);
+  }, [filters, offset, valid, w?.id, externalName, continuousName, revision, historicalSeq]);
   function inspectSimilar(row: ClassifiedSpeech) {
     setSelected(row);
     setSimilar([]);
@@ -307,7 +310,8 @@ export default function DialoguePage({
         </p>
         <p>
           统计成功发生的聊天、公开发言与喊话，每个事件只计一次；不重复计算不同听众的记忆副本。默认只统计有他人听见的发言。Agent
-          筛选包含他的发言及听到的话。计算在浏览器后台线程完成，筛选和相似检索不调用 LLM。
+          筛选包含他的发言及听到的话。计算在浏览器后台线程完成，筛选和相似检索不调用
+          LLM。核账、协商、催缴和告警采用更具体的短语优先；税收、门禁、家庭储备等可同时标注。承诺、交付陈述和抗税言论只是语言线索，不代表已执行或系统判定叛乱。
         </p>
       </details>
       <div className="experience-filters nlp-filters">
@@ -477,7 +481,8 @@ export default function DialoguePage({
                     {[
                       ['total', '全部发言'],
                       ['cooperate', '协作 / 分工'],
-                      ['teach', '知识传授'],
+                      ['accounting', '核账 / 交付确认'],
+                      ['warning', '风险告警'],
                       ['conflict', '争执 / 威胁'],
                     ].map(([key, name], i) => (
                       <Area
@@ -540,7 +545,7 @@ export default function DialoguePage({
                         }
                       }}
                     >
-                      关联决策
+                      {continuousName ? '回放发言现场' : '关联决策'}
                     </button>
                   </div>
                 </article>

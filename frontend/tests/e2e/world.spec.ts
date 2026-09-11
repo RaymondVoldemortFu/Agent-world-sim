@@ -22,7 +22,7 @@ test('configuration page shows the current world rules on desktop and mobile', a
   await expect(setting('丢弃物品')).toContainText('销毁背包物品，0 AP');
   await expect(setting('放置物品')).toContainText('1 AP，可被捡起');
   await expect(setting('观察方式')).toContainText('每次决策自动更新，0 AP');
-  await expect(setting('大声说话')).toContainText('2 AP，2 格内可听见');
+  await expect(setting('大声说话')).toContainText('2 AP，5 格内可听见');
   await expect(setting('孤单条长度')).toContainText('40–100');
   await expect(setting('抑郁状态')).toContainText('每日额外扣 10 血');
   await expect(setting('全力观察')).toContainText('2 AP，3 格内');

@@ -1,3 +1,4 @@
+import { SHOUT_RADIUS } from './world';
 import { readyActors, ecoId } from '../ecology/engine';
 import type { Agent, World } from './types';
 import { nextTask, decisionIdFor } from './engine';
@@ -21,10 +22,10 @@ export function conflicts(w: World, a: Agent, b: Agent): boolean {
   // A human attack can make a colocated defender retreat two tiles (plus vision 1).
   // Visibility radius (1) + maximum movement per action (1). A one-step move
   // at distance 2 can enter the other actor's observation before its decision.
-  // Shout also reaches radius 2, so listeners must stay in separate batches.
+  // Shout also reaches radius 5, so listeners must stay in separate batches.
   if (
     (!w.ecology || a.eco?.region === b.eco?.region) &&
-    Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= (w.ecology ? 3 : 2)
+    Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= Math.max(SHOUT_RADIUS, w.ecology ? 3 : 2)
   )
     return true;
   // Survey is sampled during commit and saved as a frozen private snapshot.

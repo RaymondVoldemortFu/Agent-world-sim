@@ -1,3 +1,11 @@
+import {
+  ManorActionSchema,
+  type ManorAction,
+  type ManorState,
+  type ManorTile,
+  type Residence,
+  type ManorSettings,
+} from '../manor/types';
 import { z } from 'zod';
 import {
   EcoActionSchema,
@@ -23,6 +31,7 @@ const item = z.enum(['food', 'wood', 'stone', 'ore', 'basic_tool', 'advanced_too
 export const ActionSchema = z
   .discriminatedUnion('type', [
     EcoActionSchema,
+    ManorActionSchema,
     z
       .object({
         type: z.literal('move'),
@@ -93,6 +102,7 @@ export const ActionSchema = z
 // Explicit union keeps downstream action narrowing precise despite Zod's dynamic literal list.
 export type Action =
   | EcoAction
+  | ManorAction
   | { type: 'move'; dx: number; dy: number }
   | { type: 'harvest' | 'terraform' | 'wait' | 'survey' }
   | { type: 'shout' | 'public_speak'; text: string }
@@ -152,6 +162,8 @@ export interface Memory {
   importance: number;
 }
 export interface Agent {
+  away?: boolean;
+  residence?: Residence;
   eco?: EcoBody;
   brain?: Brain;
   id: number;
@@ -181,6 +193,7 @@ export interface Agent {
   survey?: SurveyResult;
 }
 export interface Tile {
+  manor?: ManorTile;
   eco?: EcoTile;
   x: number;
   y: number;
@@ -206,7 +219,8 @@ export interface Proposal {
 export interface Config {
   worldModel: 'legacy' | 'ecology';
   controller: 'atomic' | 'hybrid';
-  ecoPreset: 'forager' | 'settlement' | 'village';
+  ecoPreset: 'forager' | 'settlement' | 'village' | 'manor';
+  manorSettings?: ManorSettings;
   startDay: number;
   regions: number;
   llmDailyCalls: number;
@@ -244,7 +258,18 @@ export const ConfigSchema = z
   .object({
     worldModel: z.enum(['legacy', 'ecology']).default('legacy'),
     controller: z.enum(['atomic', 'hybrid']).default('hybrid'),
-    ecoPreset: z.enum(['forager', 'settlement', 'village']).default('forager'),
+    ecoPreset: z.enum(['forager', 'settlement', 'village', 'manor']).default('forager'),
+    manorSettings: z
+      .object({
+        taxRate: z.number().min(0).max(1),
+        royalTax: z.number().min(0).max(5000),
+        shockDay: z.number().int().min(0).max(1000),
+        yieldMultiplier: z.number().min(0).max(2),
+        graceDays: z.number().int().min(1).max(60),
+        armySize: z.number().int().min(1).max(30),
+      })
+      .strict()
+      .optional(),
     startDay: z.number().int().min(1).max(365).default(160),
     regions: z.number().int().min(1).max(3).default(3),
     llmDailyCalls: z.number().int().min(0).max(3).default(2),
@@ -278,7 +303,15 @@ export const ConfigSchema = z
     freeDrop: z.boolean().default(true),
     reproductionSuccessRate: z.literal(1).default(1),
   })
-  .strict();
+  .strict()
+  .superRefine((c, ctx) => {
+    if (c.ecoPreset === 'manor' && c.inventoryCapacity < 12)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['inventoryCapacity'],
+        message: '领地初始武装与口粮需要至少12kg负重',
+      });
+  });
 export const DEFAULT_CONFIG: Config = {
   worldModel: 'legacy',
   controller: 'hybrid',
@@ -287,10 +320,10 @@ export const DEFAULT_CONFIG: Config = {
   regions: 3,
   llmDailyCalls: 2,
   llmDailyTokens: 6000,
-  contextWindow: 65536,
+  contextWindow: 100000,
   size: 15,
   population: 20,
-  days: 100,
+  days: 150,
   seed: 20260909,
   spawn: 'clusters',
   wildlifeEnabled: true,
@@ -363,6 +396,7 @@ export interface Usage {
   model: string;
 }
 export interface World {
+  manor?: ManorState;
   ecology?: Ecology;
   version: 1;
   rulesVersion: string;

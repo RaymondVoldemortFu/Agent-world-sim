@@ -82,6 +82,7 @@ export default function InscriptionsPage({
             {[
               ['留存铭文', rows.length],
               ['书写者', authors.length],
+              ['账簿记录', rows.filter((r) => r.item === 'personal_ledger').length],
               ['木板铭文', rows.filter((r) => r.item === 'inscribed_wood').length],
               ['石板铭文', rows.filter((r) => r.item === 'inscribed_stone').length],
             ].map(([name, n]) => (
@@ -118,6 +119,7 @@ export default function InscriptionsPage({
                 <option value="">全部载体</option>
                 <option value="inscribed_wood">木板</option>
                 <option value="inscribed_stone">石板</option>
+                <option value="personal_ledger">个人账簿</option>
               </select>
             </label>
             <label>

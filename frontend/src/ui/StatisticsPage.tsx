@@ -13,7 +13,7 @@ import {
 import type { World } from '../sim/types';
 import { BUILDINGS, RECIPES, CROPS } from '../ecology/catalog';
 import { energy } from '../ecology/batches';
-import { worldStatistics, number as n, goalNames } from './world-statistics';
+import { statisticsFields, worldStatistics, number as n, goalNames } from './world-statistics';
 
 function Trend({
   title,
@@ -191,14 +191,14 @@ export default function StatisticsPage({
                     <th>区域</th>
                     <th>活人</th>
                     <th>地面 / 仓储食物 FD</th>
-                    <th>田块 / 面积 ha</th>
+                    <th>{w.manor ? '田条 / 地图占地 ha' : '田块 / 面积 ha'}</th>
                     <th>已建成 / 建造中</th>
                   </tr>
                 </thead>
                 <tbody>
                   {e.regionNames.map((name, r) => {
                     const tiles = w.tiles.filter((t) => t.eco!.region === r);
-                    const fields = tiles.flatMap((t) => t.eco!.fields);
+                    const fields = statisticsFields(tiles);
                     const buildings = tiles.flatMap((t) => t.eco!.structures);
                     const done = buildings.filter(
                       (b) => b.progress >= BUILDINGS[b.kind].minutes,

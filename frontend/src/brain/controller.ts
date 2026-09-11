@@ -1,3 +1,6 @@
+import { manorRoutine } from '../manor/routine';
+import { manorDecision } from '../manor/controller';
+import { CRAFTS } from '../manor/engine';
 import { preferences } from './personality';
 import { navigate } from './navigation';
 import { combatPolicy, shouldFlee } from '../ecology/combat-policy';
@@ -12,6 +15,11 @@ export const holdingPosition = (o: EcoObservation, b = o.self.brain) =>
   (b.movement?.holdUntil ?? 0) > activityTime(o);
 export function remember(o: EcoObservation): Brain {
   const b = structuredClone(o.self.brain);
+  if (
+    b.navigation?.status === 'arrived' &&
+    (!b.navigation.destination || b.navigation.destination.some((v, i) => v !== o.self.position[i]))
+  )
+    delete b.navigation;
   const views = [
     ...(o.lastSurvey?.tiles ?? []).map((t) => ({
       t,
@@ -443,6 +451,7 @@ function build(o: EcoObservation, b: Brain, id: string, depth = 0): Action | und
   return { type: 'eco', op: 'construct', recipe: id };
 }
 export function executeGoal(o: EcoObservation, b: Brain): Decision | undefined {
+  if (o.manor) return manorDecision(o, b);
   const goal = b.goal;
   if (!goal) return;
   delete b.goalBlocked;
@@ -789,6 +798,7 @@ export function wantsModel(o: EcoObservation, b: Brain) {
   const social =
     o.people.length > 0 && (o.day - b.lastTalk >= temperament.socialDays || o.self.loneliness > 0);
   return (
+    (!!o.manor && !b.dailyRoutine && b.callsDay === 0) ||
     (!!b.goalBlocked && b.callsDay === 0) ||
     deepReflectionDue(o) ||
     (!!o.beasts?.length && b.callsDay === 0) ||
@@ -859,6 +869,12 @@ function returnFromForaging(o: EcoObservation, b: Brain): Decision | undefined {
 }
 export function ruleDecision(o: EcoObservation, source: 'rule' | 'fallback' = 'rule'): Decision {
   const b = remember(o);
+  if (o.manor) {
+    b.source = source;
+    const d = manorDecision(o, b);
+    if (actionMinutes(d.action) > o.self.ap * 120) d.action = { type: 'wait' };
+    return d;
+  }
   o = { ...o, self: { ...o.self, brain: b } };
   b.visits ??= {};
   const key = o.self.position.join(',');
@@ -905,25 +921,32 @@ export function ruleDecision(o: EcoObservation, source: 'rule' | 'fallback' = 'r
   return enforceMovement(o, d);
 }
 const actionMinutes = (a: Action) =>
-  a.type === 'eco'
-    ? ['eat', 'drink', 'water', 'transfer', 'start_job'].includes(a.op)
-      ? 12
-      : a.op === 'inscribe'
-        ? a.item === 'stone_tablet'
-          ? 120
-          : 60
-        : a.op === 'discard'
-          ? 0
-          : 120
-    : a.type === 'chat' || a.type === 'public_speak'
-      ? 24
-      : a.type === 'shout' || a.type === 'survey'
-        ? 240
-        : a.type === 'move'
-          ? 12
-          : 120;
+  a.type === 'manor'
+    ? a.op === 'craft'
+      ? (CRAFTS[a.recipe ?? '']?.minutes ?? 120)
+      : ['give', 'deposit', 'withdraw', 'tribute', 'lock', 'unlock'].includes(a.op)
+        ? 12
+        : 120
+    : a.type === 'eco'
+      ? ['eat', 'drink', 'water', 'transfer', 'start_job'].includes(a.op)
+        ? 12
+        : a.op === 'inscribe'
+          ? a.item === 'stone_tablet'
+            ? 120
+            : 60
+          : a.op === 'discard'
+            ? 0
+            : 120
+      : a.type === 'chat' || a.type === 'public_speak'
+        ? 24
+        : a.type === 'shout' || a.type === 'survey'
+          ? 240
+          : a.type === 'move'
+            ? 12
+            : 120;
 export function shouldThink(o: EcoObservation) {
   const b = remember(o);
+  if (o.manor) return o.manor.external?.kind !== 'army' && wantsModel(o, b);
   return (
     (deepReflectionDue(o) ||
       !survival(o, b) ||
@@ -947,6 +970,19 @@ export function interpret(o: EcoObservation, out: BrainOutput, attempts = 1, tok
     b.lastDeepReflectionDay = o.day;
     b.deepReflection = { day: o.day, ...out.reflection };
   }
+  if (out.dailyRoutine && o.manor) {
+    b.dailyRoutine = structuredClone(out.dailyRoutine);
+    delete b.estateEmptyStoreDay;
+    delete b.estateWork;
+  }
+  if (out.clearGoal) {
+    delete b.executionBlock;
+    delete b.goal;
+    delete b.goalBlocked;
+    delete b.navigation;
+    delete b.procurement;
+    delete b.forageTrip;
+  }
   if (out.combatPolicy) b.combatPolicy = { ...out.combatPolicy };
   delete b.recallQuery;
   delete b.recipeQuery;
@@ -968,6 +1004,8 @@ export function interpret(o: EcoObservation, out: BrainOutput, attempts = 1, tok
     }
   }
   if (out.goal) {
+    delete b.executionBlock;
+    if (o.manor && b.navigation?.status === 'arrived' && b.movement) delete b.movement.holdUntil;
     delete b.navigation;
     delete b.goalBlocked;
     if (out.goal.skill === 'navigate' && b.movement) delete b.movement.holdUntil;
@@ -1052,6 +1090,30 @@ export function compactContext(o: EcoObservation) {
     .filter((k): k is string => !!k)
     .slice(0, 12);
   return {
+    manor: o.manor
+      ? {
+          nearby: o.manor.nearby,
+          shock: o.manor.shock,
+          ...(o.manor.external?.kind === 'messenger'
+            ? {
+                mission: {
+                  returning: o.manor.external.returning,
+                  witnessed: o.manor.external.witnessed,
+                  assessment: o.manor.external.assessment,
+                },
+              }
+            : {}),
+        }
+      : undefined,
+    manorAtlas: o.manor
+      ? o.manor.map
+          .filter((t) => t.kind !== 'green')
+          .map(
+            (t) =>
+              `(${t.x},${t.y}) ${t.kind} ${t.label ?? ''} ${t.id ?? ''} ${t.stores.join(',')}${t.blocked ? ' 不可通行' : ''}`,
+          )
+          .join('\n')
+      : undefined,
     protocol: 'context-1',
     seq: o.seq,
     minute: o.minute,
@@ -1062,11 +1124,19 @@ export function compactContext(o: EcoObservation) {
       known
         .map((id) => [
           id,
-          id === 'farming'
-            ? { name: '农耕', steps: '备地→适季播种→照管→成熟收割', crops: CROPS }
-            : id.startsWith('build:')
-              ? BUILDINGS[id.slice(6)]
-              : RECIPES[id],
+          o.manor && id === 'manor_farming'
+            ? {
+                name: '领地农耕',
+                steps: '固定田条劳动→月底成熟→实物收割→搬运入仓',
+                minutesPerPlotMonth: 1800,
+              }
+            : o.manor && CRAFTS[id]
+              ? CRAFTS[id]
+              : id === 'farming'
+                ? { name: '农耕', steps: '备地→适季播种→照管→成熟收割', crops: CROPS }
+                : id.startsWith('build:')
+                  ? BUILDINGS[id.slice(6)]
+                  : RECIPES[id],
         ])
         .filter(([, v]) => v),
     ),
@@ -1084,6 +1154,9 @@ export function compactContext(o: EcoObservation) {
       id: o.self.id,
       name: o.self.name,
       role: o.self.role,
+      biography: o.manor
+        ? `${o.manor.residence.biography}\n熟悉住所 (${o.manor.residence.home.join(',')})；日常储藏 ${o.manor.residence.store}；熟悉田条 ${o.manor.residence.plots.join(',') || '无'}`
+        : undefined,
       personality: o.self.personality,
       combat: o.self.combat,
       combatPolicy: combatPolicy(o.self.brain),
@@ -1111,6 +1184,8 @@ export function compactContext(o: EcoObservation) {
       skills: b.skills,
       goal: o.self.brain.goal,
       navigation: o.self.brain.navigation,
+      lastTaskResult: o.self.brain.lastTaskResult,
+      dailyRoutine: o.manor ? manorRoutine(o) : undefined,
       goalBlocked: o.self.brain.goalBlocked,
       movement: {
         ...o.self.brain.movement,

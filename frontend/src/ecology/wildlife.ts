@@ -270,6 +270,20 @@ export function fleeCombat(
         y >= w.config.size ||
         seen.has(key) ||
         ecoAt(w, x, y, threat.region).eco!.biome === 'water' ||
+        (w.manor &&
+          (() => {
+            const t = ecoAt(w, x, y, threat.region),
+              l = t.manor?.lock;
+            return (
+              t.manor?.kind === 'wall' ||
+              !!(
+                l &&
+                l.locked &&
+                l.hp > 0 &&
+                !a.eco!.stock.some((b) => b.item === l.key && b.kg >= 0.05 - 1e-8)
+              )
+            );
+          })()) ||
         hazards.some((b) => b.x === x && b.y === y)
       )
         continue;

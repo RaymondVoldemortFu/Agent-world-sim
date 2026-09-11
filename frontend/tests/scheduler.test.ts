@@ -26,7 +26,7 @@ it('takes only a contiguous independent prefix and respects the move halo', () =
   b.x = a.x + 2;
   b.y = a.y;
   expect(conflicts(w, a, b)).toBe(true);
-  b.x = a.x + 3;
+  b.x = a.x + 6;
   expect(conflicts(w, a, b)).toBe(false);
 });
 it('keeps distant partners with shared mutable proposals ordered', () => {

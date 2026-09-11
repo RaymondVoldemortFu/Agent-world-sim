@@ -1,3 +1,4 @@
+import { ContinuousSpeechReader } from './continuous-dialogue';
 import { db } from '../runtime/store';
 import type { WorldEvent } from '../sim/types';
 import {
@@ -52,7 +53,31 @@ self.onmessage = async ({ data }) => {
   if (data.type !== 'load') return;
   try {
     const events = new Map<number, Omit<WorldEvent, 'patch'>>();
-    if (data.external) {
+    if (data.continuous) {
+      const reader = new ContinuousSpeechReader();
+      let after = 0;
+      while (true) {
+        const params = new URLSearchParams({
+          after: String(after),
+          through: String(data.through),
+          limit: '1000',
+        });
+        const response = await fetch(
+          `/continuous-api/runs/${encodeURIComponent(data.continuous)}/dialogue?${params}`,
+        );
+        if (!response.ok) throw Error('连续实验对话读取失败，请刷新重试');
+        const page = await response.json();
+        for (const e of page.events) {
+          const speech = reader.read(e);
+          if (speech) events.set(speech.seq, speech);
+        }
+        postMessage({ type: 'progress', count: events.size });
+        if (!page.hasMore) break;
+        if (!Number.isInteger(page.nextCursor) || page.nextCursor <= after)
+          throw Error('对话分页未前进');
+        after = page.nextCursor;
+      }
+    } else if (data.external) {
       await Promise.all(
         ['chat', 'shout', 'public_speak'].map(async (type) => {
           let before: number | undefined;

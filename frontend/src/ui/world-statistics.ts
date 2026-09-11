@@ -10,6 +10,7 @@ export const goalNames: Record<string, string> = {
   make: '制造',
   build: '建造',
   farm: '农耕',
+  estate: '领地任务',
   deliver: '交付物资',
   meet: '会面',
   reproduce: '繁衍',
@@ -24,7 +25,7 @@ export const goalNames: Record<string, string> = {
   confront: '冲突',
 };
 export function worldStatistics(w: World) {
-  const alive = w.agents.filter((a) => !a.death);
+  const alive = w.agents.filter((a) => !a.death && !a.away);
   const current = metrics(w);
   const mean = (fn: (a: (typeof alive)[number]) => number) =>
     alive.length ? alive.reduce((sum, a) => sum + fn(a), 0) / alive.length : null;
@@ -69,7 +70,7 @@ export function worldStatistics(w: World) {
       t.eco.structures.forEach((s) => stock(s.contents, 'stored'));
     }
   for (const j of w.ecology?.jobs ?? []) stock(j.inputs, 'processing');
-  const fields = w.tiles.flatMap((t) => t.eco?.fields ?? []);
+  const fields = statisticsFields(w.tiles);
   const structures = w.tiles.flatMap((t) => t.eco?.structures ?? []);
   const batches = [
     ...alive.flatMap((a) => a.eco?.stock ?? []),
@@ -102,4 +103,19 @@ export function worldStatistics(w: World) {
       dailyCalls: m.calls - (w.metrics[i - 1]?.calls ?? 0),
     })),
   };
+}
+
+export function statisticsFields(tiles: World['tiles']) {
+  return tiles.flatMap<{ id: string; area: number; crop?: string; stage: string }>((t) =>
+    t.manor?.plot
+      ? [
+          {
+            id: t.manor.plot.id,
+            area: t.eco!.area,
+            crop: 'grain',
+            stage: t.manor.plot.harvest > 0 ? 'ripe' : 'growing',
+          },
+        ]
+      : (t.eco?.fields ?? []),
+  );
 }

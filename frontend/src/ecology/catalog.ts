@@ -31,6 +31,8 @@ function item(
     capacity,
   };
 }
+item('personal_ledger', '个人账簿');
+ITEMS.personal_ledger.unitKg = 1;
 item('flax_seed', '亚麻种子');
 item('grass_seed', '牧草种子');
 item('nuts', '干坚果', 5500, 0.12, 240);
@@ -722,3 +724,18 @@ export function catalogErrors() {
 for (const [id, item] of Object.entries(ITEMS))
   if (item.capabilities || item.capacity)
     item.unitKg = id === 'pot' ? 1.25 : (RECIPES[id]?.outputs[id] ?? 0.01);
+
+// Physical equipment shared by the manor scenario and the observation UI.
+item('iron_sword', '铁剑', 0, 0, 1e9, { fighting: 1 }, 12000);
+ITEMS.iron_sword.unitKg = 1.4;
+ITEMS.iron_sword.combat = { attack: 45 };
+item('mail', '锁子甲', 0, 0, 1e9, { armor: 1 }, 16000);
+ITEMS.mail.unitKg = 6;
+ITEMS.mail.combat = { armor: 0.48 };
+for (const key of ['keep', ...Array.from({ length: 6 }, (_, i) => `home${i + 1}`)]) {
+  item(`key_${key}`, `钥匙 ${key}`);
+  ITEMS[`key_${key}`].unitKg = 0.05;
+}
+
+item('iron_knife', '铁刀', 0, 0, 1e9, { cutting: 1 }, 12000);
+ITEMS.iron_knife.unitKg = 0.5;

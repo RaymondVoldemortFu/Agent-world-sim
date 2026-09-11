@@ -1,5 +1,6 @@
 import type { World } from '../sim/types';
 import type { Batch, Inscription } from '../ecology/types';
+import { inscriptionRecords } from '../ecology/inscriptions';
 import { BUILDINGS, ITEMS } from '../ecology/catalog';
 
 export interface InscriptionLocation {
@@ -24,21 +25,22 @@ export function worldInscriptions(w?: World): InscriptionEntry[] {
   const records = new Map<string, InscriptionEntry>();
   const add = (batches: Batch[], location: Omit<InscriptionLocation, 'kg' | 'readable'>) => {
     for (const batch of batches) {
-      if (!batch.inscription || !(batch.kg > 0)) continue;
-      const record = batch.inscription;
-      let entry = records.get(record.id);
-      if (!entry) {
-        entry = { record, item: batch.item, locations: [] };
-        records.set(record.id, entry);
+      if (!(batch.kg > 0)) continue;
+      for (const record of inscriptionRecords(batch)) {
+        let entry = records.get(record.id);
+        if (!entry) {
+          entry = { record, item: batch.item, locations: [] };
+          records.set(record.id, entry);
+        }
+        const readable =
+          batch.kg + 1e-7 >=
+          (ITEMS[batch.item]?.unitKg ?? (batch.item === 'inscribed_stone' ? 2 : 1));
+        const existing = entry.locations.find((p) => p.key === location.key);
+        if (existing) {
+          existing.kg += batch.kg;
+          existing.readable ||= readable;
+        } else entry.locations.push({ ...location, kg: batch.kg, readable });
       }
-      const readable =
-        batch.kg + 1e-7 >=
-        (ITEMS[batch.item]?.unitKg ?? (batch.item === 'inscribed_stone' ? 2 : 1));
-      const existing = entry.locations.find((p) => p.key === location.key);
-      if (existing) {
-        existing.kg += batch.kg;
-        existing.readable ||= readable;
-      } else entry.locations.push({ ...location, kg: batch.kg, readable });
     }
   };
   for (const t of w.tiles) {

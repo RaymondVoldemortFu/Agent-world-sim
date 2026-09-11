@@ -1,8 +1,10 @@
+import { EstateOp, type ManorView } from '../manor/types';
 import { z } from 'zod';
 import type { Decision, Memory } from '../sim/types';
 export type Biome = 'forest' | 'meadow' | 'wetland' | 'floodplain' | 'hill' | 'water';
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 export interface Inscription {
+  carrierId?: string;
   id: string;
   authorId: number;
   authorName: string;
@@ -11,6 +13,7 @@ export interface Inscription {
   text: string;
 }
 export interface Batch {
+  pages?: Inscription[]; // Personal ledger entries travel with the physical book.
   inscription?: Inscription;
   id: string;
   item: string;
@@ -218,7 +221,10 @@ export const EcoActionSchema = z
 export type EcoAction = z.infer<typeof EcoActionSchema>;
 export const GoalSchema = z
   .object({
+    op: EstateOp.optional(),
+    id: z.string().max(80).optional(),
     skill: z.enum([
+      'estate',
       'hunt',
       'survey',
       'learn',
@@ -251,10 +257,29 @@ export const GoalSchema = z
   })
   .strict();
 export type Goal = z.infer<typeof GoalSchema>;
+export const DailyRoutineSchema = z
+  .object({
+    mode: z.enum(['default', 'custom', 'off']),
+    eat: z.boolean().optional(),
+    fetchFood: z.boolean().optional(),
+    storeSurplus: z.boolean().optional(),
+    farm: z.boolean().optional(),
+    storeId: z.string().min(1).max(100).optional(),
+    plots: z.array(z.string().min(1).max(60)).max(48).optional(),
+    reserveDays: z.number().min(0).max(30).optional(),
+    idleAt: z
+      .tuple([z.number().int().min(0).max(63), z.number().int().min(0).max(63)])
+      .nullable()
+      .optional(),
+  })
+  .strict();
+export type DailyRoutine = z.infer<typeof DailyRoutineSchema>;
 export const BrainOutputSchema = z
   .object({
     intent: z.string().max(200),
     goal: GoalSchema.optional(),
+    clearGoal: z.boolean().optional(),
+    dailyRoutine: DailyRoutineSchema.optional(),
     combatPolicy: z
       .object({
         mode: z.enum(['flee', 'low_hp', 'fight']),
@@ -309,10 +334,30 @@ export const BrainOutputSchema = z
   });
 export type BrainOutput = z.infer<typeof BrainOutputSchema>;
 export interface Brain {
+  executionBlock?: { signature: string; reason: string };
+  dailyRoutine?: DailyRoutine;
+  estateEmptyStoreDay?: number;
+  estateWork?: { month: number; plots: Record<string, { work: number; harvest: number }> };
   goalBlocked?: string;
   lastDeepReflectionDay?: number;
   deepReflection?: { day: number; summary: string; plan: string };
-  navigation?: { status: 'moving' | 'arrived' | 'blocked'; steps?: number; reason?: string };
+  navigation?: {
+    status: 'moving' | 'arrived' | 'blocked';
+    steps?: number;
+    reason?: string;
+    destination?: [number, number];
+    day?: number;
+  };
+  lastTaskResult?: {
+    day: number;
+    position: [number, number];
+    op: string;
+    id?: string;
+    item?: string;
+    amount?: number;
+    targetId?: number;
+    recipe?: string;
+  };
   combatPolicy?: { mode: 'flee' | 'low_hp' | 'fight'; retreatHp?: number };
   movement?: { holdUntil?: number; returnAfterGather?: boolean };
   forageTrip?: { origin: [number, number]; region: number; returning: boolean };
@@ -354,6 +399,7 @@ export interface BrainUpdate {
   knowledge?: string[];
 }
 export interface EcoObservation {
+  manor?: ManorView;
   seq: number;
   protocol: 'hybrid-1';
   day: number;

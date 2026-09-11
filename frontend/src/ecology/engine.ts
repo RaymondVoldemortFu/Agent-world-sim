@@ -1,4 +1,20 @@
-import { inscribe, visibleInscriptions, readInscriptions } from './inscriptions';
+import { actionConditions } from '../manor/execution';
+import { SHOUT_RADIUS } from '../sim/world';
+import {
+  CRAFTS,
+  observeRoyalMission,
+  executeManor,
+  manorView,
+  settleManor,
+  validateManorAction,
+  canEnter,
+} from '../manor/engine';
+import {
+  inscribe,
+  visibleInscriptions,
+  readInscriptions,
+  concealLedgerPages,
+} from './inscriptions';
 import { advanceWildlife, fightBeast, fleeCombat, settlements, combatView } from './wildlife';
 import type { World, Agent, Decision, WorldEvent, Metrics, Action } from '../sim/types';
 import { ActionSchema } from '../sim/types';
@@ -31,7 +47,10 @@ export function ecoId(w: World, a: Agent) {
 }
 export function readyActors(w: World) {
   return w.agents
-    .filter((a) => !a.death && a.ap > 1e-7 && !w.ecology!.pending.some((p) => p.actor === a.id))
+    .filter(
+      (a) =>
+        !a.death && !a.away && a.ap > 1e-7 && !w.ecology!.pending.some((p) => p.actor === a.id),
+    )
     .sort((a, b) => a.eco!.readyAt - b.eco!.readyAt || a.id - b.id);
 }
 export function nextEco(w: World) {
@@ -42,6 +61,16 @@ export function nextEco(w: World) {
   return { kind: 'action' as const, agent: a, id: ecoId(w, a) };
 }
 export function minutesFor(w: World, a: Agent, action: Action) {
+  if (action.type === 'manor')
+    return action.op === 'write_ledger'
+      ? 60
+      : action.op === 'show_ledger'
+        ? 24
+        : action.op === 'craft'
+          ? (CRAFTS[action.recipe ?? '']?.minutes ?? 120)
+          : ['give', 'deposit', 'withdraw', 'tribute', 'lock', 'unlock'].includes(action.op)
+            ? 12
+            : 120;
   if (action.type === 'move') {
     const t = ecoAt(w, a.x, a.y, a.eco!.region).eco!;
     return Math.ceil(
@@ -118,6 +147,11 @@ export function startEco(w: World, agentId: number, d: Decision, id: string): Wo
   if (error) {
     a.brain!.failures++;
     a.brain!.lastFailure = error;
+    if (w.manor)
+      a.brain!.executionBlock = {
+        signature: actionConditions(observeEco(w, a), d.action),
+        reason: error,
+      };
     w.counters.failures++;
     tx.tell(a, error, 'observed', undefined, 5);
     return tx.finish('action_failed', error, id, false, a);
@@ -166,7 +200,7 @@ function complete(w: World, p: ScheduledAction) {
   let recipients: Agent[] = [];
   const touch = () => tx.t(a.x, a.y, region);
   const person = (id: number, range = 1) => {
-    const b = w.agents.find((b) => b.id === id && !b.death && b.id !== a.id);
+    const b = w.agents.find((b) => b.id === id && !b.death && !b.away && !b.away && b.id !== a.id);
     ensure(b && b.eco!.region === region && distance(a, b) <= range, '目标必须是可及范围内的活人');
     return b!;
   };
@@ -179,7 +213,13 @@ function complete(w: World, p: ScheduledAction) {
   };
   try {
     ensure(!a.death, '角色已死亡');
+    validateManorAction(w, a, action);
     switch (action.type) {
+      case 'manor': {
+        text = executeManor(w, tx, a, action);
+        type = `estate_${action.op}`;
+        break;
+      }
       case 'move': {
         ensure(Math.abs(action.dx) + Math.abs(action.dy) === 1, '只能上下左右移动');
         const x = a.x + action.dx,
@@ -198,6 +238,7 @@ function complete(w: World, p: ScheduledAction) {
             ),
           '深水需要舟筏或桥',
         );
+        if (a.brain!.navigation?.status === 'arrived') delete a.brain!.navigation;
         a.x = x;
         a.y = y;
         text = `移动到区域${region} (${x},${y})`;
@@ -208,7 +249,12 @@ function complete(w: World, p: ScheduledAction) {
           (a.brain!.goal.region === undefined || a.brain!.goal.region === region)
         ) {
           delete a.brain!.goal;
-          a.brain!.navigation = { status: 'arrived', steps: 0 };
+          a.brain!.navigation = { status: 'arrived', steps: 0, destination: [x, y], day: w.tick };
+          if (w.manor) {
+            a.brain!.movement ??= {};
+            a.brain!.movement.holdUntil =
+              (w.tick - 1) * w.config.dailyAP * 120 + w.ecology!.clock + 600;
+          }
           text += '，已到达导航目的地';
         }
         break;
@@ -224,7 +270,7 @@ function complete(w: World, p: ScheduledAction) {
       case 'chat':
       case 'public_speak':
       case 'shout': {
-        const range = action.type === 'shout' ? 2 : 1;
+        const range = action.type === 'shout' ? SHOUT_RADIUS : 1;
         if (action.type === 'chat') {
           if (action.targetId) person(action.targetId);
           if (action.proposal) {
@@ -276,7 +322,7 @@ function complete(w: World, p: ScheduledAction) {
           }
         }
         recipients = w.agents.filter(
-          (b) => !b.death && b.eco!.region === region && distance(a, b) <= range,
+          (b) => !b.death && !b.away && b.eco!.region === region && distance(a, b) <= range,
         );
         text = `${action.type === 'shout' ? '大声说' : action.type === 'public_speak' ? '公开说' : '说'}：“${action.text}”`;
         if (recipients.some((b) => b.id !== a.id)) {
@@ -334,13 +380,23 @@ function complete(w: World, p: ScheduledAction) {
         tx.a(b);
         const attacker = combatView(a),
           defender = combatView(b);
-        b.hp -= Math.ceil(Math.max(20, attacker.attack) * (1 - defender.protection));
+        b.hp -= Math.ceil(
+          Math.max(20, attacker.attack) *
+            (1 - defender.protection) *
+            (w.manor && tile && ['keep', 'wall'].includes(t.manor?.kind ?? '') ? 0.6 : 1),
+        );
         w.counters.attacks++;
         if (b.hp <= 0) dieEco(w, tx, b, '攻击');
         text = `攻击 #${b.id}${retreat ? '；' + retreat.text : ''}`;
         if (!b.death) {
           const after = fleeCombat(w, tx, b, threat, attempts);
           if (after) text += '；' + after.text;
+          if (w.manor && !after?.escaped && b.x === a.x && b.y === a.y) {
+            a.hp -= Math.ceil(Math.max(12, defender.attack) * (1 - attacker.protection));
+            tx.tell(b, `#${a.id} 攻击了你，你进行了自卫反击`, 'observed', a.id, 9);
+            text += '；对方自卫反击';
+            if (a.hp <= 0) dieEco(w, tx, a, '战斗反击');
+          }
         }
         break;
       }
@@ -349,6 +405,7 @@ function complete(w: World, p: ScheduledAction) {
         switch (op) {
           case 'inscribe': {
             text = inscribe(w, tx, a, action.item!, action.text!);
+            if (w.manor && a.brain!.goal?.skill === 'inscribe') delete a.brain!.goal;
             if (a.brain!.goal?.skill === 'inscribe') delete a.brain!.goal;
             break;
           }
@@ -983,6 +1040,11 @@ function complete(w: World, p: ScheduledAction) {
     w.counters.failures++;
     a.brain!.failures++;
     a.brain!.lastFailure = err instanceof Error ? err.message : String(err);
+    if (w.manor)
+      a.brain!.executionBlock = {
+        signature: actionConditions(observeEco(w, a), action),
+        reason: a.brain!.lastFailure,
+      };
     text = `${action.type === 'eco' ? action.op : action.type} 失败：${a.brain!.lastFailure}`;
   }
   text = `${a.name} #${a.id} ${text}`;
@@ -995,7 +1057,13 @@ function complete(w: World, p: ScheduledAction) {
     tx.tell(a, text, 'observed', undefined, success ? 2 : 5);
     if (success && !['wait', 'eat', 'drink', 'survey', 'discard'].includes(type))
       for (const b of w.agents)
-        if (!b.death && b.id !== a.id && b.eco!.region === a.eco!.region && distance(a, b) <= 1)
+        if (
+          !b.death &&
+          !b.away &&
+          b.id !== a.id &&
+          b.eco!.region === a.eco!.region &&
+          distance(a, b) <= 1
+        )
           tx.tell(b, text, 'observed', undefined, 2);
   }
   if (d.memory_note) {
@@ -1014,6 +1082,7 @@ function complete(w: World, p: ScheduledAction) {
     }
   }
   if (!a.death) readInscriptions(w, tx, a);
+  if (w.manor) observeRoyalMission(w, tx, a);
   return tx.finish(type, text, p.id + ':complete', success, a);
 }
 export function stepEco(w: World) {
@@ -1031,7 +1100,8 @@ export function stepEco(w: World) {
   }
   const tx = new Tx(w),
     day = w.tick;
-  settleEcology(w, tx);
+  if (w.manor) settleManor(w, tx);
+  else settleEcology(w, tx);
   w.metrics.push(metricsEco(w));
   if (day >= w.config.days) w.cursor = { phase: 'complete', round: 0, index: 0, ids: [] };
   else {
@@ -1056,7 +1126,7 @@ export function stepEco(w: World) {
   return event;
 }
 export function metricsEco(w: World): Metrics {
-  const alive = w.agents.filter((a) => !a.death);
+  const alive = w.agents.filter((a) => !a.death && !a.away);
   const stores = [
     ...alive.map((a) => a.eco!.stock),
     ...w.tiles.flatMap((t) => [t.eco!.ground, ...t.eco!.structures.map((s) => s.contents)]),
@@ -1075,7 +1145,7 @@ export function metricsEco(w: World): Metrics {
         ),
       0,
     ),
-    farms: w.tiles.reduce((n, t) => n + t.eco!.fields.length, 0),
+    farms: w.tiles.reduce((n, t) => n + (t.manor?.plot ? 1 : t.eco!.fields.length), 0),
     avgHunger: alive.reduce((n, a) => n + a.hunger, 0) / (alive.length || 1),
     avgLoneliness: alive.reduce((n, a) => n + (a.social?.loneliness ?? 0), 0) / (alive.length || 1),
     depressed: alive.filter((a) => a.social?.depressed).length,
@@ -1090,10 +1160,21 @@ export function observeEco(w: World, a: Agent, radius = 1): EcoObservation {
   const region = body.region;
   const tiles = w.tiles
     .filter((t) => t.eco!.region === region && distance(a, t) <= radius)
-    .map((t) => ({ x: t.x, y: t.y, eco: structuredClone(t.eco!) }));
+    .map((t) => {
+      const eco = structuredClone(t.eco!);
+      eco.ground = eco.ground.map(concealLedgerPages);
+      for (const s of eco.structures) s.contents = s.contents.map(concealLedgerPages);
+      if (w.manor && !canEnter(w, a, t.x, t.y)) for (const s of eco.structures) s.contents = [];
+      return { x: t.x, y: t.y, eco };
+    });
   const people = w.agents
     .filter(
-      (b) => !b.death && b.id !== a.id && b.eco!.region === region && distance(a, b) <= radius,
+      (b) =>
+        !b.death &&
+        !b.away &&
+        b.id !== a.id &&
+        b.eco!.region === region &&
+        distance(a, b) <= radius,
     )
     .map((b) => ({
       id: b.id,
@@ -1119,6 +1200,7 @@ export function observeEco(w: World, a: Agent, radius = 1): EcoObservation {
     w.usage.inputTokens + w.usage.outputTokens < w.config.maxTokens &&
     (!w.config.maxCost || w.usage.cost < w.config.maxCost);
   return {
+    manor: manorView(w, a),
     protocol: 'hybrid-1',
     seq: w.seq,
     day: w.tick,

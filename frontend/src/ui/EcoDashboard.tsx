@@ -1,3 +1,4 @@
+import ManorDashboard from './ManorDashboard';
 import { useState } from 'react';
 import { combatPolicy, fleeProbability } from '../ecology/combat-policy';
 import EcoMap from './EcoMap';
@@ -22,11 +23,32 @@ const names = {
   water: '水域',
 };
 const seasons = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
-export default function EcoDashboard({ world: w, layer }: { world: World; layer?: string }) {
+export default function EcoDashboard({
+  world: w,
+  layer,
+  externalName,
+  onInspect,
+  historical,
+}: {
+  world: World;
+  layer?: string;
+  externalName?: string;
+  onInspect?: (id: string) => Promise<boolean>;
+  historical?: boolean;
+}) {
   const [region, setRegion] = useState(0),
     [pos, setPos] = useState<[number, number]>([0, 0]),
     [person, setPerson] = useState(1),
     [catalog, setCatalog] = useState(false);
+  if (w.manor)
+    return (
+      <ManorDashboard
+        world={w}
+        externalName={externalName}
+        onInspect={onInspect}
+        historical={historical}
+      />
+    );
   const e = w.ecology!,
     t = w.tiles.find((t) => t.x === pos[0] && t.y === pos[1] && t.eco!.region === region)!,
     a = w.agents.find((a) => a.id === person);

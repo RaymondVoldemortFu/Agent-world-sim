@@ -1,3 +1,4 @@
+import { initManor } from '../manor/world';
 import { initWildlife } from './wildlife';
 import { initVillage } from './village';
 import type { World, Agent, Tile } from '../sim/types';
@@ -270,5 +271,6 @@ export function initEcology(w: World) {
     );
   }
   if (w.config.ecoPreset === 'village') initVillage(w);
+  if (w.config.ecoPreset === 'manor') initManor(w);
   initWildlife(w);
 }
