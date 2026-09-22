@@ -1,0 +1,256 @@
+.game-canvas {
+  position: relative;
+  overflow: hidden;
+  background: #95aca2;
+}
+.game-canvas > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+.game-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.game-person-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  text-align: center;
+}
+.game-person-label button {
+  pointer-events: auto;
+  font-size: 11px !important;
+  color: #fff6d9 !important;
+  background: #24392bc4 !important;
+  border: 1px solid #c3ceae44 !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  text-shadow: 0 1px 2px #142419;
+}
+.game-person-label.selected button {
+  color: #ffe6a6 !important;
+  border-color: #e7c984 !important;
+  background: #343f26ee !important;
+}
+.game-person-label span {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 230px;
+  padding: 9px 13px;
+  background: #efe7d4f2;
+  color: #384738;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.6;
+  box-shadow: 0 4px 12px #14281930;
+}
+.game-camera-tools {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  background: #253b30dc;
+  border: 1px solid #d3d4b32e;
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  z-index: 4;
+}
+.cv-app .game-camera-tools button {
+  color: #e0dfc3;
+  border: 0;
+  padding: 7px 10px;
+  background: transparent;
+  font-size: 11px;
+}
+.cv-app .game-camera-tools button[aria-pressed='true'],
+.cv-app .game-camera-tools button:hover {
+  background: #d9d6a822;
+  color: #fff0bc;
+}
+.game-minimap {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: #273b2eea;
+  padding: 10px;
+  border: 1px solid #dad5aa55;
+  border-radius: 7px;
+  box-shadow: 0 6px 20px #17271933;
+  color: #d0d6b8;
+  z-index: 3;
+}
+.game-minimap span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+.game-minimap canvas {
+  display: block;
+  width: 160px;
+  height: 132px;
+  cursor: crosshair;
+  border: 1px solid #a6b59245;
+}
+.game-minimap small {
+  display: block;
+  font-size: 9px;
+  margin-top: 7px;
+  color: #9dad95;
+}
+.game-compass {
+  position: absolute;
+  left: 24px;
+  top: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #f0e8c9;
+  text-shadow: 0 1px 5px #344939;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  pointer-events: none;
+}
+.game-compass span {
+  font-size: 38px;
+  line-height: 1.2;
+}
+/* The simulation is a scene; controls and residents sit over it as a game HUD. */
+.cv-app:not(.cv-data-mode) .cv-layout {
+  position: relative;
+  display: block;
+  border-radius: 0 0 9px 9px;
+  overflow: hidden;
+}
+.cv-app:not(.cv-data-mode) .cv-sidebar {
+  position: absolute;
+  right: 16px;
+  top: 18px;
+  width: 282px;
+  max-height: calc(100% - 138px);
+  overflow: auto;
+  background: #e9e5d5eb;
+  backdrop-filter: blur(14px);
+  border: 1px solid #eff1da77;
+  border-radius: 9px;
+  box-shadow: 0 12px 32px #1c302630;
+  z-index: 5;
+}
+.cv-app:not(.cv-data-mode) .cv-map-heading {
+  position: absolute;
+  left: 24px;
+  top: 18px;
+  z-index: 3;
+  background: none;
+  border: 0;
+  pointer-events: none;
+  padding: 0;
+  color: #f4edce;
+  text-shadow: 0 2px 8px #334b3a;
+}
+.cv-app:not(.cv-data-mode) .cv-map-heading h1 {
+  font:
+    500 32px 'Noto Serif SC',
+    Georgia,
+    serif;
+  margin-top: 7px;
+  letter-spacing: 4px;
+}
+.cv-app:not(.cv-data-mode) .cv-map-heading > span {
+  display: none;
+}
+.cv-app:not(.cv-data-mode) .cv-canvas {
+  height: calc(100vh - 235px);
+  min-height: 650px;
+}
+.cv-app:not(.cv-data-mode) .cv-roster {
+  display: flex;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 10px 20px;
+  background: #223b2e;
+  gap: 8px;
+}
+.cv-app:not(.cv-data-mode) .cv-roster button {
+  max-width: 170px;
+  min-width: 120px;
+  flex: 0 0 140px;
+}
+.cv-app:not(.cv-data-mode) .cv-map-footer {
+  padding: 9px 20px;
+  font-size: 10px;
+}
+.cv-app:not(.cv-data-mode) .cv-task {
+  padding-top: 12px;
+}
+.cv-app:not(.cv-data-mode) .cv-person {
+  padding-top: 18px;
+}
+.cv-app:not(.cv-data-mode) .cv-history {
+  max-height: 260px;
+}
+@media (max-width: 1100px) {
+  .cv-app:not(.cv-data-mode) .cv-sidebar {
+    width: 250px;
+  }
+  .game-camera-tools {
+    left: 45%;
+    bottom: 14px;
+    flex-wrap: wrap;
+    max-width: 260px;
+  }
+  .game-minimap {
+    transform: scale(0.8);
+    transform-origin: bottom left;
+  }
+}
+@media (max-width: 720px) {
+  .cv-app:not(.cv-data-mode) .cv-sidebar {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: auto;
+    max-height: 600px;
+    margin: 10px;
+    border: 0;
+  }
+  .cv-app:not(.cv-data-mode) .cv-canvas {
+    height: 650px;
+    min-height: 650px;
+  }
+  .game-camera-tools {
+    left: 50%;
+    bottom: 15px;
+    width: 94%;
+    max-width: none;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .game-minimap {
+    bottom: 95px;
+    left: 10px;
+  }
+  .cv-app:not(.cv-data-mode) .cv-map-heading h1 {
+    font-size: 25px;
+  }
+  .game-compass {
+    top: 95px;
+  }
+  .cv-app:not(.cv-data-mode) .cv-roster {
+    overflow: auto;
+    justify-content: flex-start;
+  }
+  .cv-app:not(.cv-data-mode) .cv-roster button {
+    min-width: 105px;
+  }
+}

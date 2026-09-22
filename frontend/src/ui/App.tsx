@@ -170,7 +170,7 @@ export default function App() {
     }),
     [decision, setDecision] = useState<DecisionRecord>();
   const [page, setPage] = useState<
-    'world' | 'config' | 'statistics' | 'experiences' | 'dialogue' | 'inscriptions' | 'news'
+    'world' | 'config' | 'statistics' | 'experiences' | 'dialogue' | 'inscriptions' | 'news' | 'chat'
   >(() => {
     const value = new URLSearchParams(location.search).get('page');
     return value === 'config' ||
@@ -178,7 +178,7 @@ export default function App() {
       value === 'experiences' ||
       value === 'dialogue' ||
       value === 'inscriptions' ||
-      value === 'news'
+      value === 'news' || value === 'chat'
       ? value
       : 'world';
   });
@@ -200,7 +200,7 @@ export default function App() {
     if (page === 'world') url.searchParams.delete('page');
     else url.searchParams.set('page', page);
     if (page === 'experiences' && agentId) url.searchParams.set('agent', String(agentId));
-    else url.searchParams.delete('agent');
+    else if (!(continuous && page === 'chat')) url.searchParams.delete('agent');
     window.history.replaceState(null, '', url);
   }, [page, agentId]);
   const external = useRef(externalName);
@@ -508,8 +508,6 @@ export default function App() {
               统计数据
             </button>
             <button
-              disabled={continuous}
-              title={continuous ? '连续原型尚未接入此页' : undefined}
               aria-current={page === 'experiences' ? 'page' : undefined}
               onClick={() => setPage('experiences')}
             >
@@ -522,21 +520,18 @@ export default function App() {
               对话分析
             </button>
             <button
-              disabled={continuous}
-              title={continuous ? '连续原型尚未接入此页' : undefined}
               aria-current={page === 'inscriptions' ? 'page' : undefined}
               onClick={() => setPage('inscriptions')}
             >
               铭文
             </button>
             <button
-              disabled={continuous}
-              title={continuous ? '连续原型尚未接入此页' : undefined}
               aria-current={page === 'news' ? 'page' : undefined}
               onClick={() => setPage('news')}
             >
               当日新闻
             </button>
+            {continuous && <button aria-current={page === 'chat' ? 'page' : undefined} onClick={() => setPage('chat')}>Agent 访谈</button>}
           </nav>
           <button
             className="text-button"
@@ -1528,7 +1523,7 @@ export default function App() {
                 onChange={(e) => setNewEngine(e.target.value as typeof newEngine)}
               >
                 <option value="discrete">离散领地 / 生态实验</option>
-                <option value="continuous">连续村庄 · 2.5D</option>
+                <option value="continuous">三维村庄 · 游戏引擎</option>
               </select>
             </label>
             {newEngine === 'continuous' ? (

@@ -1,0 +1,17 @@
+{
+  "logicalBytes": 587040771,
+  "logicalMiB": 559.845705986023,
+  "databaseGiB": 1.442962646484375,
+  "eventShare": 0.9546733509587871,
+  "dead": 32,
+  "hunger": 3,
+  "combat": 29,
+  "armyDay": 87.0,
+  "lastDeathDay": 89.99403484562525,
+  "armyPeriod": 2.9940348456252504,
+  "allBattleDeathsByArmy": true,
+  "availableAtInvasion": 348.40084473715336,
+  "arrears": 118.35984440977028,
+  "cachePercent": 91.11690932309746,
+  "htmlBytes": 1164156
+}

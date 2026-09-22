@@ -7,7 +7,7 @@ export function createContinuousWorld(
   days = 150,
   options: Partial<ContinuousConfig> = {},
 ): World {
-  const settings = ContinuousConfigSchema.parse({ days, ...options });
+  const settings = ContinuousConfigSchema.parse({ days, ...options, scenario: 'elmwick' });
   const at = (x: number, y: number) => ({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE });
   const sites: Site[] = [
     { id: 'hall', label: '橡木大厅 · 内设粮仓', kind: 'hall', ...at(14, 3) },
@@ -120,6 +120,5 @@ export function createContinuousWorld(
       eaten: 0,
     },
     calls: 0,
-    maxCalls: settings.maxCalls,
   };
 }

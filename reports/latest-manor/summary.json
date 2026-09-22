@@ -1,0 +1,17 @@
+{
+  "cutoff": "D90 04:17",
+  "logicalMiB": 568.8603858947754,
+  "reserveStressD66": 5.276660585353852,
+  "cacheRate": 0.8809020723302777,
+  "duration": 2.2200394630148566,
+  "evidenceRows": 10673,
+  "figures": [
+    "outcome",
+    "stocks",
+    "budget",
+    "finance",
+    "health",
+    "dialogue",
+    "runtime"
+  ]
+}

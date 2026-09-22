@@ -94,6 +94,19 @@ class ContinuousStorageTests(unittest.TestCase):
             409,
         )
 
+    def test_spawned_residents_and_manor_state_survive_commit_and_replay(self):
+        w = copy.deepcopy(self.world)
+        w.update(seq=1, time=100, manor={"king": {"phase": "warning"}})
+        visitor = {"id": 33, "x": 7.5, "y": 157.5}
+        w["agents"].append(visitor)
+        event = {"seq": 1, "time": 100, "type": "royal", "text": "使者入境",
+                 "patch": {"agents": [visitor], "meta": {"seq": 1, "manor": w["manor"]}}}
+        path = "/runs/" + self.name
+        response = self.client.post(path + "/commit", json={"expected": 0, "world": w, "events": [event]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.client.get(path + "/replay?at=100").json(), w)
+        self.assertEqual(len(self.client.get(path + "/replay?at=0").json()["agents"]), 1)
+
     def test_sparse_dialogue_cursor_and_channel_metadata(self):
         path = "/runs/" + self.name
         w = copy.deepcopy(self.world)
@@ -129,6 +142,9 @@ class ContinuousStorageTests(unittest.TestCase):
 
         class Fake:
             async def post(self, url, **kwargs):
+                if url.endswith('/internal/validate-plan'):
+                    import json
+                    return type('Validation', (), {'status_code': 200, 'json': lambda _: {'content': json.dumps(json.loads(kwargs['json']['content'])), 'repairs': []}})()
                 calls.append(kwargs["json"])
 
                 class Response:
@@ -148,7 +164,9 @@ class ContinuousStorageTests(unittest.TestCase):
                 return Response()
 
         actual = app.state.client
+        actual_engine = app.state.engine_client
         app.state.client = Fake()
+        app.state.engine_client = app.state.client
         try:
             req = {
                 "actor": 1,
@@ -190,3 +208,18 @@ class ContinuousStorageTests(unittest.TestCase):
                 )
         finally:
             app.state.client = actual
+            app.state.engine_client = actual_engine
+
+    def test_compact_history_preserves_paging_and_observation_fields(self):
+        w = copy.deepcopy(self.world)
+        w.update(seq=1, time=100)
+        event = {'seq': 1, 'time': 100, 'type': 'speech', 'actor': 1,
+                 'text': '仓库取粮', 'listeners': [2], 'channel': 'talk',
+                 'patch': {'meta': {'seq': 1, 'time': 100}}}
+        path = '/runs/' + self.name
+        response = self.client.post(path + '/commit', json={'expected': 0, 'world': w, 'events': [event]})
+        self.assertEqual(response.status_code, 200, response.text)
+        full = self.client.get(path + '/events?limit=1').json()
+        lean = self.client.get(path + '/events?limit=1&compact=true').json()
+        self.assertEqual(lean, [{k: v for k, v in full[0].items() if k != 'patch'}])
+        self.assertEqual(self.client.get(path + '/events?after=1&compact=true').json(), [])

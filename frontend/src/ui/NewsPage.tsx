@@ -60,10 +60,12 @@ export default function NewsPage({
   externalName,
   world,
   historical,
+  apiBase,
 }: {
   externalName?: string;
-  world?: World;
+  world?: Pick<World, 'seq'>;
   historical: boolean;
+  apiBase?: string;
 }) {
   const [feed, setFeed] = useState<Feed>();
   const [error, setError] = useState(''),
@@ -72,6 +74,7 @@ export default function NewsPage({
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
   const through = historical ? world?.seq : undefined;
+  const endpoint = apiBase ?? `/api/experiments/${encodeURIComponent(externalName ?? '')}/news`;
   useEffect(() => {
     setBefore(1001);
     setFeed(undefined);
@@ -88,10 +91,7 @@ export default function NewsPage({
       try {
         const query = new URLSearchParams({ before: String(before), limit: '10' });
         if (through !== undefined) query.set('through', String(through));
-        const res = await fetch(
-          `/api/experiments/${encodeURIComponent(externalName)}/news?${query}`,
-          { signal: abort.signal },
-        );
+        const res = await fetch(`${endpoint}?${query}`, { signal: abort.signal });
         const data = await res.json();
         if (!res.ok) throw Error(data.detail ?? '无法读取新闻');
         if (!stopped) {
@@ -110,13 +110,13 @@ export default function NewsPage({
       abort.abort();
       clearTimeout(timer);
     };
-  }, [externalName, before, through, revision]);
+  }, [externalName, endpoint, before, through, revision]);
   const toggle = async () => {
     if (!externalName || busy) return;
     const current = ++generation.current;
     setBusy(true);
     try {
-      const res = await fetch(`/api/experiments/${encodeURIComponent(externalName)}/news`, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !feed?.enabled }),

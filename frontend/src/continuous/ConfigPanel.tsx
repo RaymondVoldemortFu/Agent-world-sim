@@ -1,3 +1,4 @@
+import { fiscalReport } from './manor/observation';
 import { continuousConfig, type ContinuousConfig } from './config';
 import { body, DAY, type World } from './types';
 
@@ -14,7 +15,20 @@ export function ContinuousFields({
 }) {
   return (
     <div className="settings-grid">
-      <p>榆树村 · 5人 · 18×16格 · 游戏一天固定为现实120秒。已有实验保持原配置。</p>
+      <p>游戏一天固定为现实120秒。已有实验保持原配置。</p>
+      <label>
+        实验场景
+        <select
+          aria-label="实验场景"
+          value={value.scenario}
+          onChange={(e) =>
+            onChange({ ...value, scenario: e.target.value as ContinuousConfig['scenario'] })
+          }
+        >
+          <option value="manor">鸦溪领地 · 32人 · 24×24</option>
+          <option value="elmwick">榆树村演示 · 5人 · 18×16</option>
+        </select>
+      </label>
       <label>
         运行模式
         <select
@@ -28,8 +42,13 @@ export function ContinuousFields({
       </label>
       {(
         [
+          ['taxRate', '农户惯例税率', 0, 1, 0.05],
+          ['royalTax', '每期王税（人日粮）', 0, 10000, 10],
+          ['shockDay', '歉收开始日（0关闭）', 0, 1000, 1],
+          ['yieldMultiplier', '歉收产量倍率', 0, 2, 0.1],
+          ['graceDays', '欠税时间限制（并非宽限）', 1, 100, 1],
+          ['armySize', '王军人数', 1, 50, 1],
           ['days', '实验天数', 1, 1000, 1],
-          ['maxCalls', '规划请求上限', 0, 100000, 1],
           ['concurrency', '连续模式并发上限', 1, 8, 1],
           ['contextWindow', '上下文窗口（token）', 4000, 128000, 1000],
           ['inventoryCapacity', '背包容量（kg）', 5, 100, 1],
@@ -40,7 +59,7 @@ export function ContinuousFields({
           <input
             aria-label={label}
             type="number"
-            min={min}
+            min={key === 'inventoryCapacity' && value.scenario === 'manor' ? 20 : min}
             max={max}
             step={step}
             value={value[key]}
@@ -72,7 +91,8 @@ export default function ContinuousConfigPanel({
           <p className="eyebrow">WORLD CONFIGURATION</p>
           <h2>连续世界配置</h2>
           <p className="muted">
-            {world ? '当前实验实际保存的配置' : '下一次实验的默认配置'} · 榆树村
+            {world ? '当前实验实际保存的配置' : '下一次实验的默认配置'} ·{' '}
+            {world?.manor ? '鸦溪领地' : '榆树村'}
           </p>
         </div>
         <button onClick={onCreate}>配置下一次实验</button>
@@ -81,13 +101,26 @@ export default function ContinuousConfigPanel({
         <dl className="continuous-config-grid">
           {Object.entries({
             执行模式: '连续动作 / 异步计划',
+            场景与规则:
+              world?.version === 'continuous-prototype-1'
+                ? '三维场景 · 原型规则 v1'
+                : '三维场景 · 游戏规则 v2',
+            导航:
+              world?.version === 'continuous-prototype-1'
+                ? '原型格点路径'
+                : '实体墙体 / 建筑入口 / 角色宽度检查',
+            行动节奏:
+              world?.version === 'continuous-prototype-1'
+                ? '原型时长'
+                : '空载步行约15米/现实秒，负重与低血量会减速',
             时间比例: '游戏1天 = 现实2分钟',
             实验天数: `${c.days}天（约${((c.days * 2) / 60).toFixed(1)}小时，暂停除外）`,
-            地图与人口: '18×16格 · 15米/格 · 5人',
+            地图与人口: world
+              ? `${world.size.w}×${world.size.h}格 · 15米/格 · ${world.agents.length}人`
+              : '24×24格 · 32人',
             控制器: world?.mode === 'scripted' ? '脚本演示' : 'LLM 自主',
             模型: model ?? '使用已配置供应商',
             背包容量: `${c.inventoryCapacity} kg`,
-            规划请求上限: `${c.maxCalls}次`,
             请求并发上限: `${c.concurrency}（每人最多1个在途）`,
             上下文窗口: `${c.contextWindow.toLocaleString()} tokens`,
             思考间隔: '通常每半个游戏日一次',
@@ -96,7 +129,9 @@ export default function ContinuousConfigPanel({
                 ? '演示安排：自动吃饭、补粮与指定农活'
                 : '仅自动进食，其他任务由Agent自行配置',
             '进食 / 消耗': '吃随身粮食 · 2500 kcal/人日',
-            农业周期: '30天成熟 · 第40天后产量减半',
+            农业周期: `30天成熟 · 第${c.shockDay}天产量变为${c.yieldMultiplier * 100}%`,
+            王税: `${c.royalTax}人日粮/期；王税粮仓到期自动扣除`,
+            王军触发: `连续欠税严格超过${c.graceDays * 2}天，或使者报告叛乱`,
             存储: 'MySQL 事件与轨迹 · 定期快照',
           }).map(([key, value]) => (
             <div key={key}>
@@ -107,7 +142,7 @@ export default function ContinuousConfigPanel({
         </dl>
       </div>
       <p className="muted">
-        连续原型的王税、使者、战斗和铭文尚未接入。切换执行模式会创建独立实验，不会将原有存档转换为另一种规则。
+        鸦溪领地包含家庭、农田、实物税粮、王室使者、王军与账簿。新建实验使用所选场景，存档保留原规则。
       </p>
     </section>
   );
@@ -129,6 +164,29 @@ export function ContinuousStatistics({ world: w }: { world?: World }) {
           第{Math.floor(w.time / DAY) + 1}天 · 已提交 #{w.seq}
         </span>
       </div>
+      {w.manor && (
+        <div className="data-panel">
+          <h3>领地财政 · 引擎准确账目</h3>
+          <p>
+            王室状态：{w.manor.king.phase} · 已征粮：{w.manor.treasury.toFixed(2)} kg
+          </p>
+          <p>
+            下次收获 D{fiscalReport(w).harvestDay} · 当前劳动预计{' '}
+            {fiscalReport(w).expectedAtCurrentWorkKg.toFixed(2)} kg / 完工潜力{' '}
+            {fiscalReport(w).potentialKg.toFixed(2)} kg
+          </p>
+          <p>
+            王税 D{fiscalReport(w).nextTaxDay} 到期 · 下期待缴{' '}
+            {fiscalReport(w).nextTaxKg.toFixed(2)} kg · 已欠 {fiscalReport(w).arrearsKg.toFixed(2)}{' '}
+            kg
+          </p>
+          <p>
+            庄园供养 {fiscalReport(w).dependents} 人 · 日需{' '}
+            {fiscalReport(w).dailyConsumptionKg.toFixed(2)} kg · 仓粮可维持{' '}
+            {fiscalReport(w).keepDays?.toFixed(2)} 天
+          </p>
+        </div>
+      )}
       <div className="data-panel data-table">
         <table>
           <thead>

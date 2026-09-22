@@ -1,5 +1,11 @@
+import { eventFrame, mergeEvents } from './game/history';
 import ContinuousConfigPanel, { ContinuousStatistics } from './ConfigPanel';
 import DialoguePage from '../ui/DialoguePage';
+import NewsPage from '../ui/NewsPage';
+import ContinuousExperiences from './ExperiencesPage';
+import ChatPage from './ChatPage';
+import { carryingCapacity, load } from './manor/rules';
+import { mailbox } from './manor/letters';
 import { useEffect, useRef, useState } from 'react';
 import Scene from './Scene';
 import {
@@ -26,6 +32,7 @@ async function request(path: string, data?: unknown) {
   return v;
 }
 const actions: Record<string, string> = {
+  estate: '领地操作',
   walk: '沿路径行走',
   work: '田间劳动',
   eat: '吃随身口粮',
@@ -35,6 +42,10 @@ const actions: Record<string, string> = {
   wait: '等待新任务',
 };
 const eventNames: Record<string, string> = {
+  estate: '实物操作',
+  royal: '王室',
+  witness: '亲见证据',
+  reaction: '战斗应对',
   plan: '计划',
   think_started: '思考中',
   think_finished: '思考完成',
@@ -56,7 +67,15 @@ export default function ContinuousPage({
   onCreate,
   onPage,
 }: {
-  page?: 'world' | 'config' | 'statistics' | 'dialogue' | 'experiences' | 'inscriptions' | 'news';
+  page?:
+    | 'world'
+    | 'config'
+    | 'statistics'
+    | 'dialogue'
+    | 'experiences'
+    | 'inscriptions'
+    | 'news'
+    | 'chat';
   model?: string;
   onCreate: () => void;
   onPage: (page: 'world') => void;
@@ -66,13 +85,17 @@ export default function ContinuousPage({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(false);
-  const [selected, setSelected] = useState(1),
+  const [selected, setSelected] = useState(() => {
+      const actor = Number(new URLSearchParams(location.search).get('agent'));
+      return Number.isInteger(actor) && actor > 0 ? actor : 1;
+    }),
     [paths, setPaths] = useState(true);
   const [events, setEvents] = useState<Event[]>([]),
     [replay, setReplay] = useState<World>(),
     [at, setAt] = useState(0),
     [tab, setTab] = useState<'agent' | 'village'>('agent');
   const [playing, setPlaying] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
   const [site, setSite] = useState('plaza'),
     [intervene, setIntervene] = useState(false);
   const frames = useRef<{ world: World; at: number }[]>([]),
@@ -85,12 +108,12 @@ export default function ContinuousPage({
     setWorld(undefined);
     setEvents([]);
     setReplay(undefined);
+    setScrubbing(false);
     frames.current = [];
     live.current = undefined;
     const source = new EventSource(`${base}/runs/${run}/stream`);
     source.onopen = () => {
       setConnected(true);
-      setError('');
     };
     source.onerror = () => setConnected(false);
     source.onmessage = (message) => {
@@ -101,6 +124,13 @@ export default function ContinuousPage({
         return;
       }
       if (data.type === 'snapshot') {
+        if (live.current && data.world.seq < live.current.seq) {
+          setEvents([]);
+          setReplay(undefined);
+          setScrubbing(false);
+          setPlaying(false);
+        }
+        setError(data.error ?? '');
         live.current = data.world;
         frames.current = [];
       } else if (live.current) {
@@ -111,19 +141,15 @@ export default function ContinuousPage({
             setError('事件流中断，请重新打开实验');
             return;
           }
-          applyEvent(live.current, event);
+          live.current = eventFrame(live.current, event);
           // Preserve intermediate actions even when an entire walk fits in one network batch.
-          frames.current.push({ world: structuredClone(live.current), at: performance.now() });
+          frames.current.push({ world: live.current, at: performance.now() });
         }
-        live.current.time = data.time;
-        setEvents((old) =>
-          [...old, ...data.events]
-            .filter((e, i, all) => all.findIndex((x) => x.seq === e.seq) === i)
-            .slice(-500),
-        );
+        live.current = { ...live.current, time: data.time };
+        setEvents((old) => mergeEvents(old, data.events));
       }
       if (live.current) {
-        const w = structuredClone(live.current);
+        const w = live.current;
         setWorld(w);
         frames.current.push({ world: w, at: performance.now() });
         frames.current = frames.current
@@ -134,13 +160,7 @@ export default function ContinuousPage({
     void fetch(`${base}/runs/${run}/events?limit=300`, { signal: controller.signal })
       .then((r) => r.json())
       .then((rows: Event[]) => {
-        if (active && Array.isArray(rows))
-          setEvents((old) =>
-            [...rows, ...old]
-              .filter((e, i, all) => all.findIndex((x) => x.seq === e.seq) === i)
-              .sort((a, b) => a.seq - b.seq)
-              .slice(-500),
-          );
+        if (active && Array.isArray(rows)) setEvents((old) => mergeEvents(rows, old));
       })
       .catch(() => {});
     return () => {
@@ -179,15 +199,18 @@ export default function ContinuousPage({
     setTab('village');
   };
   const seek = async (t: number) => {
+    setScrubbing(true);
     setAt(t);
     const n = ++generation.current;
     try {
       const w = await request(`/runs/${run}/replay?at=${t}`);
       if (n !== generation.current) return false;
       setReplay(w);
+      setScrubbing(false);
       return true;
     } catch (e) {
       setError(String(e));
+      if (n === generation.current) setScrubbing(false);
       return false;
     }
   };
@@ -214,17 +237,21 @@ export default function ContinuousPage({
   return (
     <div className={`cv-app ${page === 'world' ? '' : 'cv-data-mode'}`}>
       <div className="cv-toolbar">
-        <span className={`cv-signal ${connected ? 'online' : ''}`} />
+        <span className={`cv-signal ${connected && !error ? 'online' : ''}`} />
         <span>
           {replay
             ? '历史回放'
-            : world?.status === 'running'
-              ? '持续运行'
-              : world?.status === 'complete'
-                ? '实验完成'
-                : world
-                  ? '已暂停'
-                  : '尚未启动'}
+            : error
+              ? '推进异常'
+              : !connected && world
+                ? '连接中断'
+                : world?.status === 'running'
+                  ? '持续运行'
+                  : world?.status === 'complete'
+                    ? '实验完成'
+                    : world
+                      ? '已暂停'
+                      : '尚未启动'}
         </span>
         <span className="cv-divider" />
         <button
@@ -253,6 +280,18 @@ export default function ContinuousPage({
         <ContinuousConfigPanel world={world} model={model} onCreate={onCreate} />
       )}
       {page === 'statistics' && <ContinuousStatistics world={view} />}
+      {page === 'chat' && (
+        <ChatPage
+          world={world}
+          agentId={selected}
+          onAgent={(id) => {
+            setSelected(id);
+            const url = new URL(location.href);
+            url.searchParams.set('agent', String(id));
+            window.history.replaceState(null, '', url);
+          }}
+        />
+      )}
       {page === 'dialogue' && (
         <DialoguePage
           world={
@@ -280,18 +319,57 @@ export default function ContinuousPage({
           }}
         />
       )}
-      {['experiences', 'inscriptions', 'news'].includes(page) && (
+      {page === 'experiences' && (
+        <ContinuousExperiences
+          world={view}
+          agentId={selected}
+          onAgent={setSelected}
+          historical={!!replay}
+          onReplay={async (time) => {
+            setPlaying(false);
+            if (await seek(time)) onPage('world');
+          }}
+        />
+      )}
+      {page === 'news' && (
+        <NewsPage
+          externalName={run || undefined}
+          world={view}
+          historical={!!replay}
+          apiBase={`/continuous-api/runs/${encodeURIComponent(run)}/news`}
+        />
+      )}
+      {page === 'inscriptions' && (
         <section className="data-page">
-          <p>连续原型尚未接入此页。居民经历可在世界地图右侧查看。</p>
-          <button onClick={() => onPage('world')}>返回世界</button>
+          <h2>铭文与个人账簿</h2>
+          <p>观察者视角：Agent只能读取现场公共铭文、自己的账簿与向其展示的副本。</p>
+          {world?.manor?.inscriptions.map((b) => (
+            <article className="data-panel" key={b.id}>
+              <h3>
+                {b.id} · {b.holder ? `持有人 #${b.holder}` : '公共告示板'}
+              </h3>
+              {b.pages.length ? (
+                b.pages.map((p, i) => (
+                  <p key={i}>
+                    {clockLabel(p.time)} · #{p.author}：{p.text}
+                  </p>
+                ))
+              ) : (
+                <p>尚未写入</p>
+              )}
+              <small>已展示给：{Object.keys(b.shared).join('、') || '无人'}</small>
+            </article>
+          ))}
         </section>
       )}
       <main className="cv-layout" style={page !== 'world' ? { display: 'none' } : undefined}>
         <section className="cv-map-panel">
           <div className="cv-map-heading">
             <div>
-              <small>THE ELM COMMON</small>
-              <h1>一天的生活，正在发生。</h1>
+              <small>
+                {world?.manor ? 'RAVENBROOK · THE MANOR' : 'ELMWICK · THE LIVING VILLAGE'}
+              </small>
+              <h1>{world?.manor ? '鸦溪领地' : '榆树村'}</h1>
             </div>
             <span>{world?.mode === 'llm' ? '自主计划 / 异步思考' : '脚本计划 / 连续执行'}</span>
           </div>
@@ -321,7 +399,7 @@ export default function ContinuousPage({
             </div>
           )}
           <div className="cv-map-footer">
-            <span>拖动平移 · 滚轮缩放 · 双击复位 · 点击人物 / 建筑</span>
+            <span>拖动旋转 · 右键平移 · 滚轮缩放 · 点击人物 / 建筑</span>
             <span>15 m / 地块 · 720× 时间</span>
           </div>
           <div className="cv-timeline">
@@ -331,6 +409,7 @@ export default function ContinuousPage({
                 setPlaying(false);
                 generation.current++;
                 setReplay(undefined);
+                setScrubbing(false);
               }}
             >
               回到现场
@@ -344,7 +423,7 @@ export default function ContinuousPage({
               min="0"
               max={world?.time ?? 0}
               step="1000"
-              value={replay ? at : (world?.time ?? 0)}
+              value={replay || scrubbing ? at : (world?.time ?? 0)}
               onChange={(e) => {
                 setPlaying(false);
                 void seek(Number(e.target.value));
@@ -367,7 +446,13 @@ export default function ContinuousPage({
                   <i style={{ background: `#${p.color.toString(16)}` }} />
                   <b>{p.name}</b>
                   <small>
-                    {p.dead ? '已死亡' : p.thinking ? '思考中' : actions[p.action?.kind ?? 'wait']}
+                    {p.away
+                      ? '已离境'
+                      : p.dead
+                        ? '已死亡'
+                        : p.thinking
+                          ? '思考中'
+                          : actions[p.action?.kind ?? 'wait']}
                   </small>
                   <div className="cv-roster-bar">
                     <span style={{ width: `${b.food / 50}%` }} />
@@ -429,7 +514,10 @@ export default function ContinuousPage({
               <div className="cv-ration">
                 <span>随身口粮</span>
                 <b>{a.grain.toFixed(2)} kg</b>
-                <small>约 {(a.grain / RATION).toFixed(1)} 天 · 家庭储藏另计</small>
+                <small>
+                  约 {(a.grain / RATION).toFixed(1)} 天 · 家庭储藏另计 · 负重 {load(a).toFixed(1)}/
+                  {carryingCapacity(a)} kg{(a.items?.horse_cart ?? 0) >= 1 ? ' · 马车' : ''}
+                </small>
               </div>
               <div className="cv-task">
                 <small>当前意图</small>
@@ -470,6 +558,14 @@ export default function ContinuousPage({
                   {a.stats.distance.toFixed(0)} m
                 </span>
               </div>
+              {view.manor && (
+                <details className="cv-routine">
+                  <summary>个人信箱</summary>
+                  <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                    {mailbox(view, a) || '暂无信件'}
+                  </p>
+                </details>
+              )}
               <button className="cv-intervene-toggle" onClick={() => setIntervene(!intervene)}>
                 {intervene ? '收起' : '展开'}观察者干预
               </button>
@@ -605,11 +701,11 @@ export default function ContinuousPage({
         </aside>
       </main>
       <footer className="cv-footer">
-        <span>CONTINUOUS PROTOTYPE 01</span>
-        <span>独立模拟进程 · MySQL 精简事件 · 已提交轨迹回放</span>
+        <span>ELMWICK · CHAPTER I</span>
+        <span>田野、炊烟与村庄生活</span>
         <span>
           {world
-            ? `E${world.seq} · ${world.mode === 'llm' ? `模型调用 ${world.calls}/${world.maxCalls}` : '脚本演示'}`
+            ? `E${world.seq} · ${world.mode === 'llm' ? `模型调用 ${world.calls}` : '脚本演示'}`
             : 'READY'}
         </span>
       </footer>

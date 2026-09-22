@@ -26,16 +26,22 @@ router = APIRouter(prefix="/api/experiments/{name}/news")
 
 
 def initialize(q):
-    q.execute("""CREATE TABLE IF NOT EXISTS news_streams (
+    q.execute(
+        """CREATE TABLE IF NOT EXISTS news_streams (
       experiment VARCHAR(100) PRIMARY KEY, enabled BOOLEAN NOT NULL DEFAULT FALSE,
       status VARCHAR(20) NOT NULL DEFAULT 'idle', error TEXT, prefix LONGBLOB,
-      updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)""")
-    q.execute("""CREATE TABLE IF NOT EXISTS daily_news (
+      updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"""
+    )
+    q.execute(
+        """CREATE TABLE IF NOT EXISTS daily_news (
       experiment VARCHAR(100), day INT, boundary BIGINT, payload LONGBLOB NOT NULL,
-      created TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(experiment,day))""")
-    q.execute("""CREATE TABLE IF NOT EXISTS news_attempts (
+      created TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(experiment,day))"""
+    )
+    q.execute(
+        """CREATE TABLE IF NOT EXISTS news_attempts (
       id BIGINT AUTO_INCREMENT PRIMARY KEY, experiment VARCHAR(100), day INT,
-      purpose VARCHAR(30), payload LONGBLOB, KEY news_usage(experiment,day,id))""")
+      purpose VARCHAR(30), payload LONGBLOB, KEY news_usage(experiment,day,id))"""
+    )
 
 
 def boundaries(name):
@@ -179,22 +185,28 @@ def chunk_speeches(speeches, budget):
     return chunks
 
 
-async def generate(name, day, send):
+async def generate(name, day, send, source=None):
     existing = await asyncio.to_thread(record, name, day)
     if existing:
         return existing
     previous = await asyncio.to_thread(record, name, day - 1) if day > 1 else None
     if day > 1 and not previous:
         raise ValueError("须先生成前一天新闻")
-    world, dialogues, end = await asyncio.to_thread(day_source, name, day)
-    state, speeches, counts = day_material(world, dialogues, day)
+    world, dialogues, end = await asyncio.to_thread(
+        source.day_source if source else day_source, name, day
+    )
+    state, speeches, counts = (source.day_material if source else day_material)(
+        world, dialogues, day
+    )
     with s.transaction() as q:
         q.execute("SELECT prefix FROM news_streams WHERE experiment=%s", (name,))
         row = q.fetchone()
     prefix = (
         s.decode(row["prefix"])
         if row and row["prefix"]
-        else await asyncio.to_thread(initial_prefix, name)
+        else await asyncio.to_thread(
+            source.initial_prefix if source else initial_prefix, name
+        )
     )
     with s.transaction() as q:
         q.execute(
@@ -348,18 +360,20 @@ async def provider(app, name, day, messages, purpose):
 
 def jobs():
     with s.transaction() as q:
-        q.execute("""SELECT n.experiment, e.day completed, COALESCE(MAX(d.day),0)+1 next_day
+        q.execute(
+            """SELECT n.experiment, e.day completed, COALESCE(MAX(d.day),0)+1 next_day
           FROM news_streams n JOIN experiments e ON e.name=n.experiment
           LEFT JOIN daily_news d ON d.experiment=n.experiment
           WHERE n.enabled=TRUE AND e.state='ready'
-          GROUP BY n.experiment,e.day HAVING next_day<=completed ORDER BY n.experiment""")
+          GROUP BY n.experiment,e.day HAVING next_day<=completed ORDER BY n.experiment"""
+        )
         return q.fetchall()
 
 
-async def worker(app):
+async def worker(app, source=None):
     while True:
         try:
-            for job in await asyncio.to_thread(jobs):
+            for job in await asyncio.to_thread(source.jobs if source else jobs):
                 name, day = job["experiment"], job["next_day"]
                 # Cross-process single writer; no simulation resource locks or transactions held.
                 db = await asyncio.to_thread(s.connect)
@@ -391,6 +405,7 @@ async def worker(app):
                             lambda messages, purpose: provider(
                                 app, name, day, messages, purpose
                             ),
+                            source=source,
                         )
                     except asyncio.CancelledError:
                         raise
@@ -449,12 +464,19 @@ def listing(
     through: int = Query(2**63 - 1, ge=0),
     limit: int = Query(10, ge=1, le=30),
 ):
+    return read_feed(name, before, through, limit)
+
+
+def read_feed(name, before, through, limit, completed_days=None):
     name_check(name)
     with s.transaction() as q:
-        q.execute(
-            "SELECT day FROM experiments WHERE name=%s AND state='ready'", (name,)
-        )
-        exp = q.fetchone()
+        if completed_days is None:
+            q.execute(
+                "SELECT day FROM experiments WHERE name=%s AND state='ready'", (name,)
+            )
+            exp = q.fetchone()
+        else:
+            exp = {"day": completed_days}
         if not exp:
             raise HTTPException(404, "新闻页需要MySQL中的实验")
         q.execute(
@@ -471,7 +493,7 @@ def listing(
             (name, before, through, limit + 1),
         )
         rows = [s.decode(r["payload"]) for r in q.fetchall()]
-        if through < 2**63 - 1:
+        if completed_days is None and through < 2**63 - 1:
             q.execute(
                 "SELECT COUNT(*) n FROM events WHERE experiment=%s AND type='day_end' AND seq<=%s",
                 (name, through),

@@ -1,18 +1,12 @@
+import { observation } from './observation';
 import http from 'node:http';
+import { PendingCommit } from './commit';
+import { parseModelPlan, normalizeModelPlan, planError } from './plan';
 import { randomUUID } from 'node:crypto';
 import { ContinuousEngine } from '../../frontend/src/continuous/engine';
-import { createContinuousWorld } from '../../frontend/src/continuous/world';
+import { createGameWorld } from '../../frontend/src/continuous/game/world';
 import { ContinuousConfigSchema, continuousConfig } from '../../frontend/src/continuous/config';
-import {
-  body,
-  position,
-  clockLabel,
-  DAY,
-  SPEED,
-  PlanSchema,
-  type Event,
-  type World,
-} from '../../frontend/src/continuous/types';
+import { DAY, SPEED, type Event, type World } from '../../frontend/src/continuous/types';
 
 const gateway = process.env.CONTINUOUS_GATEWAY ?? 'http://127.0.0.1:8002';
 async function api(path: string, data?: unknown) {
@@ -35,6 +29,9 @@ type Session = {
   peers: Set<http.ServerResponse>;
   chain: Promise<unknown>;
   error?: string;
+  retryAt?: number;
+  writer: PendingCommit;
+  settlements: Array<() => void>;
   inflight: Set<string>;
 };
 const sessions = new Map<string, Session>();
@@ -47,143 +44,135 @@ const serial = <T>(s: Session, fn: () => Promise<T>): Promise<T> => {
 };
 
 async function flush(s: Session) {
-  const world = structuredClone(s.engine.world),
-    events = s.engine.events.slice();
-  const snapshot = world.time - s.lastSnap >= DAY / 4;
-  if (world.time === s.committed.time && world.seq === s.expected) return;
-  // Retain the exact request on uncertain HTTP completion; commit endpoint is idempotent.
-  const payload = { world, events, expected: s.expected, snapshot };
-  let error: unknown;
-  for (let attempt = 0; attempt < 2; attempt++)
-    try {
-      await api(`/runs/${world.id}/commit`, payload);
-      error = undefined;
-      break;
-    } catch (e) {
-      error = e;
-    }
-  if (error) throw error;
+  const recovering = !!s.error && !!s.writer.payload;
+  const candidate = s.engine.world;
+  if (!s.writer.payload && candidate.time === s.committed.time && candidate.seq === s.expected)
+    return;
+  const { world, events, snapshot } = await s.writer.save(
+    {
+      world: candidate,
+      events: s.engine.events,
+      expected: s.expected,
+      snapshot: candidate.time - s.lastSnap >= DAY / 4,
+    },
+    api,
+  );
   s.expected = world.seq;
   s.committed = world;
   s.engine.events.splice(0, events.length);
   if (snapshot) s.lastSnap = world.time;
+  if (recovering) {
+    s.error = undefined;
+    s.lastWall = performance.now();
+    for (const peer of s.peers)
+      peer.write(`data: ${JSON.stringify({ type: 'snapshot', world })}\n\n`);
+  }
+  const delta = s.peers.size
+    ? `id: ${world.seq}\ndata: ${JSON.stringify({ type: 'delta', events, time: world.time, seq: world.seq })}\n\n`
+    : '';
   for (const peer of s.peers) {
     if (peer.writableLength > 2_000_000) {
       peer.end();
       s.peers.delete(peer);
       continue;
     }
-    peer.write(
-      `id: ${world.seq}\ndata: ${JSON.stringify({ type: 'delta', events, time: world.time, seq: world.seq })}\n\n`,
-    );
+    peer.write(delta);
   }
 }
 
-function observation(s: Session, actorId: number, events: Event[], after: number) {
-  const w = s.engine.world,
-    a = w.agents.find((a) => a.id === actorId)!,
-    p = position(a, w.time),
-    b = body(a, w.time);
-  const near = (v: { x: number; y: number }) => Math.hypot(v.x - p.x, v.y - p.y) <= 30;
-  const people = w.agents
-    .filter((v) => v.id !== a.id && near(position(v, w.time)))
-    .map(
-      (v) =>
-        `${v.name}#${v.id} ${v.sex} ${v.dead ? '尸体' : '活着'} @${position(v, w.time).x.toFixed(1)},${position(v, w.time).y.toFixed(1)}`,
-    );
-  const stores = w.stores
-    .filter(near)
-    .map(
-      (v) =>
-        `${v.id} 当前谷物${v.grain.toFixed(2)}kg，可领取${(v.grain - v.reserved).toFixed(2)}kg`,
-    );
-  const heard = events.filter(
-    (e) => e.seq > after && (e.actor === a.id || e.listeners?.includes(a.id)) && e.text,
-  );
-  const text =
-    `${clockLabel(w.time)}，观察边界E${w.seq}。你在(${p.x.toFixed(1)},${p.y.toFixed(1)})米，生命${b.hp.toFixed(1)}，饱食度${(b.food / 50).toFixed(1)}，随身口粮${a.grain.toFixed(2)}kg，背包容量${a.capacity}kg。\n` +
-    `当前意图：${a.intent}；当前任务：${a.task ? `${a.task.kind} ${a.task.target} ${a.task.amount.toFixed(2)}kg` : '无'}；实际动作：${a.action?.kind ?? '空闲'}。${a.blocked ? `受阻：${a.blocked.reason}` : ''}\n` +
-    `当前自动日程：eat=${a.routine.eat}, fetch=${a.routine.fetch}, reserveDays=${a.routine.reserveDays}, work=${a.routine.work}；家庭储藏${a.home}。\n` +
-    `可见居民：${people.join('；') || '无'}。现场储藏：${stores.join('；') || '无法看到当前库存，请去粮箱现场查看'}。\n` +
-    `附近农田：${w.fields
-      .filter(near)
-      .map(
-        (f) =>
-          `${f.id}劳动${Math.round(f.work / 60000)}/${Math.round(f.required / 60000)}分钟，待收谷物${f.harvest.toFixed(2)}kg`,
-      )
-      .join('；')}\n` +
-    `自上次思考后经历：\n${heard.map((e) => `E${e.seq} ${clockLabel(e.time)} #${e.actor ?? '世界'} ${e.type}: ${e.text}`).join('\n') || '无新事件'}`;
-  return {
-    actor: a.id,
-    person: {
-      id: a.id,
-      name: a.name,
-      sex: a.sex,
-      personality: a.personality,
-      biography: a.biography,
-    },
-    atlas: w.sites.map((s) => `${s.id}=${s.label} @(${s.x},${s.y})米`).join('\n'),
-    observation: text,
-  };
+async function settle(s: Session) {
+  await flush(s);
+  while (s.settlements.length) {
+    s.settlements.shift()!();
+    await flush(s);
+  }
 }
 
 async function dispatch(s: Session) {
   const w = s.engine.world;
-  if (w.mode !== 'llm' || w.status !== 'running' || w.calls >= w.maxCalls) return;
-  for (const a of w.agents) {
+  if (w.mode !== 'llm' || w.status !== 'running') return;
+  const admitted: { actor: number; after: number; requestId: string; version: number }[] = [];
+  for (const a of [...w.agents].sort((a, b) => a.nextThink - b.nextThink || a.id - b.id)) {
     if (inFlight >= 8 || s.inflight.size >= continuousConfig(w).concurrency) break;
-    if (a.dead || a.nextThink > w.time || a.thinking) continue;
-    const requestId = `${w.id}:${a.id}:${randomUUID()}`;
-    const after = a.lastRead;
-    const token = s.engine.thinking(a.id, requestId);
+    if (
+      a.dead ||
+      a.away ||
+      w.manor?.missions.some(
+        (m) => m.agentId === a.id && (m.kind === 'army' || m.taxPaidAt !== undefined),
+      ) ||
+      a.nextThink > w.time ||
+      a.thinking
+    )
+      continue;
+    const requestId = `${w.id}:${a.id}:${randomUUID()}`,
+      after = a.lastRead,
+      token = s.engine.thinking(a.id, requestId);
     if (!token) continue;
-    // Fetch all relevant semantic history in pages; never use a rolling snapshot tail.
-    const archive: Event[] = [];
-    let before: number | undefined;
-    do {
-      const page: Event[] = await api(
-        `/runs/${w.id}/events?after=${after}&limit=2000${before ? `&before=${before}` : ''}`,
-      );
-      archive.unshift(...page);
-      if (page.length < 2000) break;
-      before = page[0].seq;
-    } while (true);
-    archive.push(...s.engine.events);
-    const obs = observation(s, a.id, archive, after);
-    const initialVersion = a.planVersion;
-    await flush(s);
     inFlight++;
     s.inflight.add(requestId);
-    void api(`/runs/${w.id}/think`, {
-      ...obs,
-      requestId,
-      contextWindow: continuousConfig(w).contextWindow,
-    })
-      .then((result) =>
-        serial(s, async () => {
+    admitted.push({ actor: a.id, after, requestId, version: token.version });
+  }
+  if (!admitted.length) return;
+  try {
+    await flush(s);
+  } catch (error) {
+    for (const t of admitted) {
+      inFlight--;
+      s.inflight.delete(t.requestId);
+      s.settlements.push(() =>
+        s.engine.thought(t.actor, t.requestId, t.version, {
+          error: '保存规划请求时失败，模型请求尚未发送，稍后重新规划',
+        }),
+      );
+    }
+    throw error;
+  }
+  // Admission is durable. History IO and model latency run outside the world's writer queue.
+  const checkpoint = structuredClone(w);
+  for (const task of admitted) {
+    void (async () => {
+      const archive: Event[] = [];
+      let before = checkpoint.seq + 1;
+      while (true) {
+        const page: Event[] = await api(
+          `/runs/${w.id}/events?after=${task.after}&before=${before}&limit=2000&compact=true`,
+        );
+        archive.unshift(...page);
+        if (page.length < 2000) break;
+        if (page[0].seq >= before) throw Error('上下文历史分页未前进');
+        before = page[0].seq;
+      }
+      return api(`/runs/${w.id}/think`, {
+        ...observation(checkpoint, task.actor, archive, task.after),
+        requestId: task.requestId,
+        contextWindow: continuousConfig(checkpoint).contextWindow,
+      });
+    })()
+      .catch((error) => ({ error: String(error), content: undefined, usage: undefined }))
+      .then((result) => {
+        s.settlements.push(() => {
           let plan;
           try {
-            if (result.content) plan = PlanSchema.parse(JSON.parse(result.content));
-          } catch {
-            result.error = '模型计划未通过动作校验';
+            if (result.content) plan = parseModelPlan(result.content);
+          } catch (error) {
+            result.error = `模型计划未执行，需修正回复格式：${planError(error)}`;
           }
-          s.engine.thought(a.id, requestId, initialVersion, {
+          s.engine.thought(task.actor, task.requestId, task.version, {
             plan,
             error: result.error,
             tokens: (result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0),
           });
-          await flush(s);
-        }),
-      )
-      .catch((error) =>
-        serial(s, async () => {
-          s.engine.thought(a.id, requestId, initialVersion, { error: String(error) });
-          await flush(s);
-        }),
-      )
+        });
+        return serial(s, () => settle(s));
+      })
       .finally(() => {
         inFlight--;
-        s.inflight.delete(requestId);
+        s.inflight.delete(task.requestId);
+      })
+      .catch((error) => {
+        s.error = `模型结算保存失败：${String(error)}`;
+        for (const peer of s.peers)
+          peer.write(`data: ${JSON.stringify({ type: 'error', error: s.error })}\n\n`);
       });
   }
 }
@@ -210,10 +199,13 @@ async function hydrate(id: string): Promise<Session> {
     peers: new Set(),
     chain: Promise.resolve(),
     inflight: new Set(),
+    writer: new PendingCommit(),
+    settlements: [],
   };
   sessions.set(id, s);
   // A process restart freezes offline time. In-flight provider outcomes are not blindly retried.
   await serial(s, async () => {
+    s.engine.refreshMovementSpeed();
     for (const a of w.agents) {
       if (a.thinking) {
         const saved = await api(
@@ -221,7 +213,7 @@ async function hydrate(id: string): Promise<Session> {
         );
         let plan;
         try {
-          if (saved?.content) plan = PlanSchema.parse(JSON.parse(saved.content));
+          if (saved?.content) plan = parseModelPlan(saved.content);
         } catch {
           /* Reject malformed recovered proposals. */
         }
@@ -264,6 +256,17 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(value));
     };
+    if (parts[0] === 'internal' && parts[1] === 'validate-plan' && req.method === 'POST') {
+      try {
+        const data = await read(req);
+        if (typeof data.content !== 'string') throw Error('content 必须为文本');
+        send(normalizeModelPlan(data.content));
+      } catch (error) {
+        res.statusCode = 422;
+        send({ error: planError(error) });
+      }
+      return;
+    }
     if (parts[0] === 'health') {
       send({ ok: true, speed: SPEED, daySeconds: 120 });
       return;
@@ -279,7 +282,7 @@ const server = http.createServer(async (req, res) => {
         if (!['scripted', 'llm'].includes(data.mode)) throw Error('模式必须为 scripted 或 llm');
         const id = `continuous-${Date.now()}-${randomUUID().slice(0, 6)}`;
         const settings = ContinuousConfigSchema.parse(data.config ?? {});
-        const w = createContinuousWorld(id, data.mode, settings.days, settings);
+        const w = createGameWorld(id, data.mode, settings);
         await api(`/runs/${id}`, { world: w });
         sessions.set(id, {
           engine: new ContinuousEngine(structuredClone(w)),
@@ -290,6 +293,8 @@ const server = http.createServer(async (req, res) => {
           peers: new Set(),
           chain: Promise.resolve(),
           inflight: new Set(),
+          writer: new PendingCommit(),
+          settlements: [],
         });
         send({ id });
         return;
@@ -300,6 +305,15 @@ const server = http.createServer(async (req, res) => {
     const id = parts[1];
     if (!/^[\w-]{1,100}$/.test(id)) throw Error('实验 ID 无效');
     const op = parts[2];
+    if (op === 'experiences' || op === 'news') {
+      send(
+        await api(
+          `/runs/${id}/${op}${url.search}`,
+          req.method === 'POST' ? await read(req) : undefined,
+        ),
+      );
+      return;
+    }
     if (op === 'events' || op === 'replay' || op === 'dialogue') {
       send(await api(`/runs/${id}/${op}${url.search}`));
       return;
@@ -312,7 +326,9 @@ const server = http.createServer(async (req, res) => {
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
       });
-      res.write(`data: ${JSON.stringify({ type: 'snapshot', world: s.committed })}\n\n`);
+      res.write(
+        `data: ${JSON.stringify({ type: 'snapshot', world: s.committed, error: s.error })}\n\n`,
+      );
       s.peers.add(res);
       req.on('close', () => s.peers.delete(res));
       return;
@@ -321,6 +337,7 @@ const server = http.createServer(async (req, res) => {
       const data = await read(req);
       await serial(s, async () => {
         if (s.error) throw Error(s.error);
+        await flush(s);
         if (op === 'control') s.engine.pause(data.paused === true);
         else if (op === 'plan') s.engine.setPlan(data.actor, data.plan);
         else if (op === 'gate') s.engine.gate(data.id, data.open === true);
@@ -347,13 +364,24 @@ const timer = setInterval(() => {
         const now = performance.now(),
           dt = now - s.lastWall;
         s.lastWall = now;
-        if (s.error) return;
+        if (s.error && (!s.writer.payload || now < (s.retryAt ?? 0))) return;
         try {
+          // Never mutate a world behind an unconfirmed commit.
+          await flush(s);
+          if (s.error) {
+            s.error = undefined;
+            s.lastWall = performance.now();
+            for (const peer of s.peers)
+              peer.write(`data: ${JSON.stringify({ type: 'snapshot', world: s.committed })}\n\n`);
+            return;
+          }
+          await settle(s);
           if (s.engine.world.status === 'running')
-            s.engine.advance(s.engine.world.time + dt * SPEED);
+            s.engine.advance(s.engine.world.time + Math.min(dt, 1000) * SPEED, 512);
           await flush(s);
           await dispatch(s);
         } catch (e) {
+          s.retryAt = performance.now() + 5000;
           s.error = `模拟已停止推进：${String(e)}`;
           for (const p of s.peers)
             p.write(`data: ${JSON.stringify({ type: 'error', error: s.error })}\n\n`);
@@ -364,13 +392,16 @@ const timer = setInterval(() => {
     ticking = false;
   });
 }, 100);
-server.listen(8001, '127.0.0.1', () =>
-  console.log('Continuous world: http://127.0.0.1:8001 — 120 wall seconds/day'),
+server.listen(Number(process.env.CONTINUOUS_PORT ?? 8001), '127.0.0.1', () =>
+  console.log(
+    `Continuous world: http://127.0.0.1:${(server.address() as { port: number }).port} — 120 wall seconds/day`,
+  ),
 );
 async function stop() {
   clearInterval(timer);
   for (const s of sessions.values())
     await serial(s, async () => {
+      await flush(s);
       s.engine.pause(true);
       await flush(s);
       for (const p of s.peers) p.end();

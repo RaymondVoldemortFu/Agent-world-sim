@@ -11,22 +11,46 @@ export type Site = Point & {
   label: string;
   kind: 'home' | 'hall' | 'field' | 'plaza' | 'well' | 'workshop' | 'gate';
 };
-export type Task = {
-  kind: 'navigate' | 'supply' | 'farm' | 'deliver' | 'rest' | 'guard';
-  target: string;
-  amount: number;
-};
+export const TaskSchema = z
+  .object({
+    kind: z.enum([
+      'navigate',
+      'supply',
+      'farm',
+      'deliver',
+      'rest',
+      'guard',
+      'give',
+      'take',
+      'put',
+      'tribute',
+      'craft',
+      'attack',
+      'break_lock',
+      'unlock',
+      'grant_access',
+      'lock',
+      'write',
+      'show',
+      'report_rebellion',
+      'write_letter',
+      'forward_letter',
+      'reject_letter',
+    ]),
+    target: z.string().min(1).max(60),
+    amount: z.number().finite().positive().max(9999).default(5),
+    item: z.string().max(60).optional(),
+    text: z.string().min(1).max(2000).optional(),
+  })
+  .strict();
+export type Task = z.infer<typeof TaskSchema>;
 export const PlanSchema = z
   .object({
     intent: z.string().min(1).max(400),
-    task: z
-      .object({
-        kind: z.enum(['navigate', 'supply', 'farm', 'deliver', 'rest', 'guard']),
-        target: z.string().min(1).max(60),
-        amount: z.number().finite().positive().max(100).default(5),
-      })
+    task: TaskSchema.nullable().optional(),
+    combat: z
+      .object({ mode: z.enum(['flee', 'low_hp', 'fight']), retreatHp: z.number().min(1).max(100) })
       .strict()
-      .nullable()
       .optional(),
     routine: z
       .object({
@@ -34,6 +58,10 @@ export const PlanSchema = z
         fetch: z.boolean(),
         reserveDays: z.number().min(1).max(10),
         work: z.boolean(),
+        supplyStore: z.string().max(60).optional(),
+        plots: z.array(z.string().max(60)).max(48).optional(),
+        depositStore: z.string().max(60).optional(),
+        idleAt: z.string().max(60).optional(),
       })
       .strict()
       .optional(),
@@ -55,7 +83,8 @@ export type Motion = {
   total: number;
 };
 export type Action = {
-  kind: 'walk' | 'eat' | 'withdraw' | 'deposit' | 'work' | 'rest' | 'wait';
+  kind: 'walk' | 'eat' | 'withdraw' | 'deposit' | 'work' | 'rest' | 'wait' | 'estate';
+  operation?: Task;
   start: number;
   end: number;
   target: string;
@@ -71,7 +100,15 @@ export type Agent = Point & {
   biography: string;
   home: string;
   plot: string;
+  plots?: string[];
+  items?: Record<string, number>;
+  combat?: { mode: 'flee' | 'low_hp' | 'fight'; retreatHp: number };
+  away?: boolean;
   keys: string[];
+  doorAccess?: { door: string; by: number; until: number }[];
+  systemMemory?: string[];
+  doorAlarm?: import('./manor/perception').DoorAlarm;
+  replanAfterAlarm?: boolean;
   hp: number;
   food: number;
   bodyAt: number;
@@ -81,7 +118,7 @@ export type Agent = Point & {
   planVersion: number;
   intent: string;
   task?: Task;
-  routine: { eat: boolean; fetch: boolean; reserveDays: number; work: boolean };
+  routine: NonNullable<Plan['routine']>;
   motion?: Motion;
   action?: Action;
   voice?: { text: string; mode: 'talk' | 'public_speak' | 'shout'; start: number; end: number };
@@ -93,18 +130,27 @@ export type Agent = Point & {
   tokens: number;
   stats: { workMs: number; distance: number; eatenKg: number; spoken: number; deliveredKg: number };
 };
-export type Store = Point & { id: string; label: string; grain: number; reserved: number };
+export type Store = Point & {
+  id: string;
+  label: string;
+  grain: number;
+  reserved: number;
+  items?: Record<string, number>;
+  lock?: { key: string; locked: boolean; hp: number };
+};
 export type Field = Point & {
   id: string;
   label: string;
   work: number;
   required: number;
   harvest: number;
+  yieldKg?: number;
 };
-export type Gate = Point & { id: string; label: string; open: boolean; key: string };
+export type Gate = Point & { id: string; label: string; open: boolean; key: string; hp?: number };
 export type World = {
+  manor?: import('./manor/state').Manor;
   settings?: import('./config').ContinuousConfig;
-  version: 'continuous-prototype-1';
+  version: 'continuous-prototype-1' | 'continuous-game-2';
   id: string;
   time: number;
   seq: number;
@@ -124,9 +170,9 @@ export type World = {
   nextDay: number;
   ledger: { initial: number; grown: number; eaten: number };
   calls: number;
-  maxCalls: number;
 };
 export type Patch = {
+  mail?: import('./manor/state').Letter[];
   agents?: Agent[];
   stores?: Store[];
   fields?: Field[];
@@ -182,9 +228,12 @@ export function applyEvent(w: World, e: Event): void {
       for (const row of rows) {
         const index = w[key].findIndex((v) => v.id === row.id);
         if (index >= 0) (w[key] as unknown[])[index] = structuredClone(row);
+        else (w[key] as unknown[]).push(structuredClone(row));
       }
   }
+  const priorLetters = w.manor?.letters;
   Object.assign(w, structuredClone(e.patch.meta));
+  mergeMail(w, e.patch, priorLetters);
   w.seq = e.seq;
   w.time = e.time;
 }
@@ -192,4 +241,21 @@ export function applyEvent(w: World, e: Event): void {
 export function clockLabel(t: number) {
   const minute = Math.floor(t / 60000) % 1440;
   return `第 ${Math.floor(t / DAY) + 1} 天 ${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+}
+
+/** Letter bodies are immutable; events carry only changed letters, not the whole archive. */
+export function mergeMail(w: World, patch: Patch, previous?: import('./manor/state').Letter[]) {
+  if (!w.manor) return;
+  if (patch.meta.manor && !('letters' in patch.meta.manor) && previous !== undefined)
+    w.manor.letters = previous;
+  if (patch.mail?.length) {
+    const changed = new Map(patch.mail.map((l) => [l.id, structuredClone(l)]));
+    w.manor.letters = (w.manor.letters ?? [])
+      .map((l) => {
+        const n = changed.get(l.id);
+        changed.delete(l.id);
+        return n ?? l;
+      })
+      .concat([...changed.values()]);
+  }
 }
